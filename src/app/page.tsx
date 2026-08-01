@@ -4,10 +4,12 @@ import {
   listSamples,
   rebuildStyleProfile,
 } from "@/lib/samples";
+import { ensureSchema } from "@/lib/bootstrap";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
+  await ensureSchema();
   const samples = await listSamples();
   let style = await getActiveStyleProfile();
   if (!style) {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { writingSamples } from "@/db/schema";
 import { countWords, listSamples, rebuildStyleProfile } from "@/lib/samples";
+import { ensureSchema } from "@/lib/bootstrap";
 
 export const dynamic = "force-dynamic";
 
@@ -9,12 +10,14 @@ const MAX_CONTENT = 50_000;
 const MAX_SAMPLES = 40;
 
 export async function GET() {
+  await ensureSchema();
   const samples = await listSamples();
   return NextResponse.json({ samples });
 }
 
 export async function POST(request: Request) {
   try {
+    await ensureSchema();
     const contentType = request.headers.get("content-type") ?? "";
 
     let title = "Untitled sample";

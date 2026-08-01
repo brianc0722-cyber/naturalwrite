@@ -3,11 +3,13 @@ import { db } from "@/db";
 import { rewriteJobs } from "@/db/schema";
 import { getActiveStyleProfile, rebuildStyleProfile } from "@/lib/samples";
 import { rewriteToStyle } from "@/lib/style-analyzer";
+import { ensureSchema } from "@/lib/bootstrap";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   try {
+    await ensureSchema();
     const body = (await request.json()) as { text?: string };
     const text = (body.text ?? "").trim();
 
