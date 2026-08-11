@@ -7,11 +7,22 @@ import { detectAi } from "@/lib/ai-detector";
 import { ExtractError, extractTextFromBuffer } from "@/lib/text-extract";
 import { getActiveStyleProfile } from "@/lib/samples";
 import { getAiSecondOpinion } from "@/lib/llm-opinion";
+import {
+  checkRateLimit,
+  clientKeyFromRequest,
+  rateLimitHeaders,
+} from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_TEXT = 300_000;
+
+/**
+ * Scanning is the most expensive route: text extraction, then an optional
+ * paid LLM call. Limited more tightly than the rest.
+ */
+const SCAN_LIMIT = { name: "scan", max: 10, windowMs: 60_000 };
 
 export async function GET() {
   await ensureSchema();
@@ -25,6 +36,19 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const limit = checkRateLimit(clientKeyFromRequest(request), SCAN_LIMIT);
+    if (!limit.ok) {
+      return NextResponse.json(
+        {
+          error: `Too many scans. Try again in ${limit.retryAfter}s.`,
+        },
+        {
+          status: 429,
+          headers: rateLimitHeaders(limit, SCAN_LIMIT.max),
+        },
+      );
+    }
+
     await ensureSchema();
     const contentType = request.headers.get("content-type") ?? "";
 

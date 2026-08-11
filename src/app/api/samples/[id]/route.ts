@@ -4,13 +4,32 @@ import { db } from "@/db";
 import { writingSamples } from "@/db/schema";
 import { rebuildStyleProfile } from "@/lib/samples";
 import { ensureSchema } from "@/lib/bootstrap";
+import {
+  checkRateLimit,
+  clientKeyFromRequest,
+  rateLimitHeaders,
+} from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Serial ids make deletion enumerable (DELETE /api/samples/1..n wipes
+ * everything). Until real auth lands, throttle the enumeration.
+ */
+const DELETE_LIMIT = { name: "samples-delete", max: 20, windowMs: 60_000 };
+
 type Params = { params: Promise<{ id: string }> };
 
-export async function DELETE(_request: Request, { params }: Params) {
+export async function DELETE(request: Request, { params }: Params) {
   try {
+    const limit = checkRateLimit(clientKeyFromRequest(request), DELETE_LIMIT);
+    if (!limit.ok) {
+      return NextResponse.json(
+        { error: `Too many deletions. Try again in ${limit.retryAfter}s.` },
+        { status: 429, headers: rateLimitHeaders(limit, DELETE_LIMIT.max) },
+      );
+    }
+
     await ensureSchema();
     const { id: raw } = await params;
     const id = Number(raw);

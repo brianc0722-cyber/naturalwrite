@@ -3,11 +3,19 @@ import { db } from "@/db";
 import { writingSamples } from "@/db/schema";
 import { countWords, listSamples, rebuildStyleProfile } from "@/lib/samples";
 import { ensureSchema } from "@/lib/bootstrap";
+import {
+  checkRateLimit,
+  clientKeyFromRequest,
+  rateLimitHeaders,
+} from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
 const MAX_CONTENT = 50_000;
 const MAX_SAMPLES = 40;
+
+/** Each upload triggers a full style-profile rebuild over every sample. */
+const SAMPLES_LIMIT = { name: "samples", max: 20, windowMs: 60_000 };
 
 export async function GET() {
   await ensureSchema();
@@ -17,6 +25,17 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const limit = checkRateLimit(clientKeyFromRequest(request), SAMPLES_LIMIT);
+    if (!limit.ok) {
+      return NextResponse.json(
+        { error: `Too many uploads. Try again in ${limit.retryAfter}s.` },
+        {
+          status: 429,
+          headers: rateLimitHeaders(limit, SAMPLES_LIMIT.max),
+        },
+      );
+    }
+
     await ensureSchema();
     const contentType = request.headers.get("content-type") ?? "";
 

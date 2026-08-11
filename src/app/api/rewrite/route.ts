@@ -4,11 +4,27 @@ import { rewriteJobs } from "@/db/schema";
 import { getActiveStyleProfile, rebuildStyleProfile } from "@/lib/samples";
 import { rewriteToStyle } from "@/lib/style-analyzer";
 import { ensureSchema } from "@/lib/bootstrap";
+import {
+  checkRateLimit,
+  clientKeyFromRequest,
+  rateLimitHeaders,
+} from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
+/** Rewrites are unbounded in length and persist a row per call. */
+const REWRITE_LIMIT = { name: "rewrite", max: 30, windowMs: 60_000 };
+
 export async function POST(request: Request) {
   try {
+    const limit = checkRateLimit(clientKeyFromRequest(request), REWRITE_LIMIT);
+    if (!limit.ok) {
+      return NextResponse.json(
+        { error: `Too many rewrites. Try again in ${limit.retryAfter}s.` },
+        { status: 429, headers: rateLimitHeaders(limit, REWRITE_LIMIT.max) },
+      );
+    }
+
     await ensureSchema();
     const body = (await request.json()) as { text?: string };
     const text = (body.text ?? "").trim();
