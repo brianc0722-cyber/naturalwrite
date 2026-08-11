@@ -1,5 +1,14 @@
 import type { ScanSignal, ScanStyleMatch, StyleProfile } from "@/db/schema";
 
+/**
+ * Shown alongside every result. This detector measures stylistic markers
+ * that correlate with LLM output — it cannot establish authorship. Formal
+ * human writing (academic, legal, corporate) scores high; lightly edited
+ * AI scores low. It must never be used as evidence of misconduct.
+ */
+export const DETECTOR_DISCLAIMER =
+  "This is a stylistic signal, not proof of authorship. Formal human writing often scores high and edited AI often scores low. Do not use this score to accuse anyone.";
+
 export type AiDetection = {
   score: number; // 0 = human, 100 = AI
   verdict: string;
@@ -476,12 +485,15 @@ export function detectAi(
   const confidence: AiDetection["confidence"] =
     wordCount < 40 ? "low" : wordCount < 150 ? "medium" : "high";
 
+  // Deliberately non-determinative wording. This is a stylistic heuristic,
+  // not provenance evidence: formal human prose scores high and lightly
+  // edited AI scores low. See DISCLAIMER below, surfaced in the UI.
   const verdict =
     score < 35
-      ? "Likely original / human-written"
+      ? "Few AI-style patterns"
       : score < 65
-        ? "Mixed signals — review closely"
-        : "Likely AI-generated";
+        ? "Some AI-style patterns"
+        : "Many AI-style patterns";
 
   signals.sort((a, b) => b.points - a.points);
 

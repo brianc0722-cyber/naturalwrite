@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AiOpinion, ScanSignal, ScanStyleMatch } from "@/db/schema";
+import { DETECTOR_DISCLAIMER } from "@/lib/ai-detector";
 
 type ScanRow = {
   id: number;
@@ -317,6 +318,9 @@ export function AiScanner({ hasProfile }: { hasProfile: boolean }) {
                       ? " · medium confidence"
                       : " · high confidence"}
                 </p>
+                <p className="mt-2 text-xs leading-relaxed text-slate-500">
+                  {DETECTOR_DISCLAIMER}
+                </p>
                 {result.detection.styleMatch ? (
                   <p className="mt-2 rounded-2xl bg-slate-50 px-3 py-2.5 text-sm text-slate-700 ring-1 ring-slate-200">
                     {result.detection.styleMatch.note}
@@ -450,8 +454,7 @@ export function AiScanner({ hasProfile }: { hasProfile: boolean }) {
               <li>• Compares the text against your uploaded writing samples</li>
             </ul>
             <p className="mt-3 text-[11px] leading-relaxed text-slate-400">
-              Scores are a statistical estimate, not proof. Use them as a
-              confidence check on originality, not a verdict on intent.
+              {DETECTOR_DISCLAIMER}
             </p>
           </div>
         </div>
