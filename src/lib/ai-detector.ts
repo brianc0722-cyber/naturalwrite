@@ -159,6 +159,12 @@ function dedupeContainedPhrases(hits: PhraseMatcher[]): PhraseMatcher[] {
  */
 const RATE_BASIS = 250;
 
+/**
+ * Evidence floor before the scanner will comment on how well a text
+ * matches the user's learned style.
+ */
+const MIN_PROFILE_SAMPLES = 3;
+const MIN_PROFILE_WORDS = 1000;
 
 const DISCOURSE_OPENERS =
   /^(furthermore|moreover|additionally|consequently|therefore|thus|hence|however|in conclusion|in summary|in addition|as a result|on the other hand|it is worth noting|it's worth noting|notably|importantly)\b/i;
@@ -404,7 +410,14 @@ export function detectAi(
 
   // 9. Cross-check with the user's learned style
   let styleMatch: ScanStyleMatch = null;
-  if (profile && profile.sampleCount > 0 && profile.sampleWordCount >= 30) {
+  // Require real evidence before claiming a style match. Previously one
+  // 63-word sample produced "Strongly matches your learned writing style
+  // (76%)" on unrelated text — high-confidence wording from no evidence.
+  if (
+    profile &&
+    profile.sampleCount >= MIN_PROFILE_SAMPLES &&
+    profile.sampleWordCount >= MIN_PROFILE_WORDS
+  ) {
     const sents =
       wordCount / Math.max(sentences.length, 1);
     const sentDiff = Math.abs(sents - profile.avgSentenceLength) /
@@ -413,8 +426,13 @@ export function detectAi(
       (contractionRate > 8 ? 0.25 : contractionRate > 3 ? 0.5 : 0.8) -
         profile.formalityScore,
     );
+    // Both sides must be in the same unit. `fpRate` is occurrences per
+    // 1,000 words; `profile.firstPersonRate` is a 0-1 fraction. The old
+    // code multiplied the fraction by 10, which is not a conversion — the
+    // two terms only agreed by coincidence on first-person-heavy text.
+    const profileFpPer1k = profile.firstPersonRate * 1000;
     const fpDiff = Math.abs(
-      Math.min(fpRate, 30) / 30 - Math.min(profile.firstPersonRate * 10, 1),
+      Math.min(fpRate, 30) / 30 - Math.min(profileFpPer1k, 30) / 30,
     );
     const match = Math.max(
       0,
