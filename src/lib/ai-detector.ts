@@ -9,12 +9,25 @@ export type AiDetection = {
   styleMatch: ScanStyleMatch;
 };
 
-const AI_PHRASES = [
+/**
+ * Stock LLM phrasing, split by evidential strength.
+ *
+ * STRONG: distinctive multi-word constructions that rarely appear in
+ * unassisted prose. These carry full weight.
+ *
+ * WEAK: formal register words that LLMs overuse but that also occur
+ * naturally in academic, legal and corporate human writing. Counting
+ * these at full weight was the main driver of false positives on formal
+ * human prose, so they are worth a fraction of a strong hit.
+ *
+ * Discourse connectives (furthermore / moreover / consequently /
+ * in conclusion / additionally) are deliberately NOT listed here — they
+ * are already scored by the "Formulaic transitions" signal below, and
+ * listing them in both places double-penalised the same evidence.
+ */
+const AI_PHRASES_STRONG = [
   "delve into",
-  "dive into",
-  "tapestry",
   "rich tapestry",
-  "underscore",
   "underscores the importance",
   "in today's fast-paced",
   "in today's digital",
@@ -27,65 +40,125 @@ const AI_PHRASES = [
   "a testament to",
   "plays a crucial role",
   "play a crucial role",
-  "crucial role",
-  "pivotal role",
   "in the realm of",
-  "in the world of",
-  "when it comes to",
   "at the end of the day",
-  "a wide range of",
   "a myriad of",
-  "various aspects",
   "shed light on",
   "sheds light on",
   "paves the way",
   "paving the way",
-  "serves as a",
-  "serve as a",
   "navigate the complexities",
   "navigate the landscape",
-  "foster a",
-  "fosters a",
-  "leverage the",
-  "leverages the",
   "holistic approach",
-  "multifaceted",
   "nuanced understanding",
   "seamless integration",
-  "cutting-edge",
-  "state-of-the-art",
   "game-changer",
   "game changer",
-  "unlock the",
-  "unlocks the",
   "elevate your",
-  "elevates",
   "embark on a journey",
   "embark on this",
   "beacon of",
-  "interplay between",
-  "intricate",
-  "meticulous",
   "comprehensive understanding",
-  "robust",
-  "furthermore",
-  "moreover",
-  "consequently",
-  "in conclusion",
-  "in summary",
-  "additionally",
-  "ultimately",
-  "the landscape of",
-  "the future of",
-  "revolutionize",
-  "revolutionizes",
-  "transformative",
   "harness the power",
   "harnessing the power",
   "at the forefront",
   "paramount importance",
   "of paramount",
+  "revolutionize",
+  "revolutionizes",
+  "unlock the",
+  "unlocks the",
+  "the landscape of",
 ];
+
+const AI_PHRASES_WEAK = [
+  "dive into",
+  "tapestry",
+  "underscore",
+  "crucial role",
+  "pivotal role",
+  "in the world of",
+  "when it comes to",
+  "a wide range of",
+  "various aspects",
+  "serves as a",
+  "serve as a",
+  "foster a",
+  "fosters a",
+  "leverage the",
+  "leverages the",
+  "multifaceted",
+  "cutting-edge",
+  "state-of-the-art",
+  "elevates",
+  "interplay between",
+  "intricate",
+  "meticulous",
+  "robust",
+  "transformative",
+  "ultimately",
+  "the future of",
+];
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Word-boundary matchers for AI_PHRASES.
+ *
+ * Naive substring matching (`text.includes("robust")`) fires on ordinary
+ * words like "robustness", "meticulously", "elevated", "intricately" and
+ * "underscored", which produced false AI accusations on human prose.
+ * Each phrase is anchored with \b so only whole words/phrases count.
+ *
+ * Built once at module load — building these per call would be wasteful.
+ */
+type PhraseMatcher = { phrase: string; re: RegExp; weight: number };
+
+/**
+ * Word-boundary matchers for the phrase lists.
+ *
+ * Naive substring matching (`text.includes("robust")`) fired on ordinary
+ * words like "robustness", "meticulously", "elevated", "intricately" and
+ * "underscored", which produced false AI accusations on human prose.
+ * Each phrase is anchored with \b so only whole words/phrases count.
+ *
+ * Built once at module load — rebuilding per call would be wasteful.
+ */
+const AI_PHRASE_MATCHERS: PhraseMatcher[] = [
+  ...AI_PHRASES_STRONG.map((phrase) => ({
+    phrase,
+    re: new RegExp(`\\b${escapeRegExp(phrase)}\\b`, "i"),
+    weight: 1,
+  })),
+  ...AI_PHRASES_WEAK.map((phrase) => ({
+    phrase,
+    re: new RegExp(`\\b${escapeRegExp(phrase)}\\b`, "i"),
+    weight: 0.4,
+  })),
+];
+
+/**
+ * Drops phrases fully contained in a longer phrase that also matched, so
+ * "plays a crucial role" isn't additionally counted as "crucial role".
+ */
+function dedupeContainedPhrases(hits: PhraseMatcher[]): PhraseMatcher[] {
+  const byLength = [...hits].sort((a, b) => b.phrase.length - a.phrase.length);
+  const kept: PhraseMatcher[] = [];
+  for (const hit of byLength) {
+    if (!kept.some((k) => k.phrase.includes(hit.phrase))) kept.push(hit);
+  }
+  return kept;
+}
+
+/**
+ * Minimum word count used as the denominator for per-1,000-word rates.
+ * Without a floor, one hit in a short excerpt extrapolates to a huge rate
+ * and saturates the signal on very little evidence.
+ */
+const RATE_BASIS = 250;
+
 
 const DISCOURSE_OPENERS =
   /^(furthermore|moreover|additionally|consequently|therefore|thus|hence|however|in conclusion|in summary|in addition|as a result|on the other hand|it is worth noting|it's worth noting|notably|importantly)\b/i;
@@ -155,11 +228,17 @@ export function detectAi(
   const signals: ScanSignal[] = [];
   let score = 18; // mild neutral prior
 
-  // 1. AI-favorite phrases
-  const lower = text.toLowerCase();
-  const phraseHits = AI_PHRASES.filter((p) => lower.includes(p));
-  const phraseRate = phraseHits.length * per1k;
-  const phrasePoints = Math.min(30, Math.round(phraseRate * 6));
+  // 1. AI-favorite phrases (whole-word matches only — see AI_PHRASE_MATCHERS)
+  const phraseMatches = dedupeContainedPhrases(
+    AI_PHRASE_MATCHERS.filter(({ re }) => re.test(text)),
+  );
+  const phraseHits = phraseMatches.map((m) => m.phrase);
+  const weightedHits = phraseMatches.reduce((sum, m) => sum + m.weight, 0);
+  // Normalise against a floor, not the raw word count: with a plain per-1k
+  // rate a single hit in a 100-word excerpt extrapolated to "10 per 1,000
+  // words" and maxed out the signal. Short texts now need real density.
+  const phraseRate = (weightedHits * 1000) / Math.max(wordCount, RATE_BASIS);
+  const phrasePoints = Math.min(24, Math.round(phraseRate * 4));
   push(
     signals,
     "AI-favorite phrases",
