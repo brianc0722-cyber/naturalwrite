@@ -249,6 +249,22 @@ const FORMAL_TO_CASUAL: Array<[RegExp, string]> = [
   [/\bstate-of-the-art\b/gi, "advanced"],
 ];
 
+/**
+ * Casual -> formal substitutions.
+ *
+ * Only unambiguous, part-of-speech-stable pairs belong here. Several
+ * entries were removed because a context-free global swap corrupted
+ * ordinary sentences:
+ *   end -> conclude        "the end result" became "the conclude result"
+ *   get -> obtain          breaks "get up", "get along", "get it"
+ *   things -> items        needless register shift, often wrong
+ *   but -> however         ungrammatical mid-clause ("...salt, however pepper")
+ *   so -> therefore        breaks "so that", "so much", "not so"
+ *   literally -> ""        silently deletes a word the author chose
+ *   show -> demonstrate    breaks the noun sense ("a TV show")
+ *   help -> assist         breaks "can't help it"
+ *   about -> regarding     breaks "about to", "walked about"
+ */
 const CASUAL_TO_FORMAL: Array<[RegExp, string]> = [
   [/\ba lot of\b/gi, "many"],
   [/\bkinda\b/gi, "somewhat"],
@@ -258,21 +274,10 @@ const CASUAL_TO_FORMAL: Array<[RegExp, string]> = [
   [/\bgotta\b/gi, "need to"],
   [/\byeah\b/gi, "yes"],
   [/\bnope\b/gi, "no"],
-  [/\bstuff\b/gi, "material"],
-  [/\bthings\b/gi, "items"],
   [/\bpretty much\b/gi, "largely"],
   [/\bbasically\b/gi, "essentially"],
-  [/\bliterally\b/gi, ""],
-  [/\bsuper\b/gi, "very"],
-  [/\bget\b/gi, "obtain"],
-  [/\bhelp\b/gi, "assist"],
-  [/\bshow\b/gi, "demonstrate"],
-  [/\bstart\b/gi, "begin"],
-  [/\bend\b/gi, "conclude"],
-  [/\bbut\b/gi, "however"],
-  [/\bso\b/gi, "therefore"],
-  [/\bbecause\b/gi, "since"],
-  [/\babout\b/gi, "regarding"],
+  [/\bsuper\b(?= (?:good|bad|nice|cool|fast|slow|hard|easy|important))/gi, "very"],
+  [/\bbecause of the fact that\b/gi, "because"],
 ];
 
 const CONTRACTION_EXPAND: Array<[RegExp, string]> = [
@@ -354,9 +359,65 @@ function applyPairs(text: string, pairs: Array<[RegExp, string]>): string {
   return out.replace(/\s{2,}/g, " ").replace(/\s+([,.!?;:])/g, "$1");
 }
 
+/** Abbreviations after which a period does NOT end a sentence. */
+const ABBREVIATIONS =
+  /\b(?:mr|mrs|ms|dr|prof|sr|jr|st|vs|etc|e\.g|i\.e|approx|dept|est|fig|no|vol|al)\.$/i;
+
+/**
+ * Splits into sentences without breaking inside URLs, decimals, or
+ * abbreviations. A terminator only ends a sentence when it is followed by
+ * whitespace (or end of input); "example.com" and "3.5" have no space
+ * after the period, so they stay intact.
+ */
 function splitSentencesKeep(text: string): string[] {
-  const parts = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g);
-  return parts ? parts.map((p) => p.trim()).filter(Boolean) : [text.trim()];
+  const out: string[] = [];
+  let buf = "";
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    buf += ch;
+    if (ch === "." || ch === "!" || ch === "?") {
+      // consume any run of terminators (e.g. "?!", "...")
+      while (i + 1 < text.length && /[.!?]/.test(text[i + 1])) {
+        buf += text[++i];
+      }
+      const rest = text.slice(i + 1);
+      const endsInput = rest.trim() === "";
+      const followedBySpace = /^\s/.test(rest);
+      if ((endsInput || followedBySpace) && !ABBREVIATIONS.test(buf.trim())) {
+        out.push(buf.trim());
+        buf = "";
+      }
+    }
+  }
+  if (buf.trim()) out.push(buf.trim());
+  return out.length ? out : [text.trim()];
+}
+
+/**
+ * Words that are capitalised because they are names/proper nouns rather
+ * than because they start a sentence. Conservative list — days, months
+ * and common title words cover most real cases.
+ */
+const PROPER_NOUN_HINT =
+  /^(?:mon|tues|wednes|thurs|fri|satur|sun)day$|^(?:january|february|march|april|may|june|july|august|september|october|november|december)$|^(?:mr|mrs|ms|dr|prof)$/i;
+
+/** Common verbs/auxiliaries used as a cheap "does this clause have a predicate?" test. */
+const VERB_HINT =
+  /\b(is|are|was|were|be|been|being|am|has|have|had|do|does|did|will|would|can|could|should|shall|may|might|must|went|got|made|said|took|came|saw|knew|thought|found|gave|told|became|left|felt|put|brought|began|kept|held|wrote|stood|heard|let|meant|set|met|ran|paid|sat|spoke|lay|led|grew|lost|fell|sent|built|understood|drew|broke|spent|cut|rose|drove|bought|wore|chose|[a-z]+(?:ed|es|s))\b/i;
+
+/** Pronoun/determiner openers that suggest a clause has its own subject. */
+const SUBJECT_HINT =
+  /^(?:i|you|he|she|it|we|they|this|that|these|those|there|the|a|an|my|your|his|her|its|our|their|one|some|many|most|few|all|each|every|no|nobody|someone|everyone)\b/i;
+
+/**
+ * Heuristic test for whether a fragment can stand as its own sentence.
+ * Deliberately conservative: when unsure, we do not split.
+ */
+function isIndependentClause(piece: string): boolean {
+  const trimmed = piece.trim().replace(/[.!?]+$/, "");
+  const w = wordsOf(trimmed);
+  if (w.length < 4) return false;
+  return SUBJECT_HINT.test(trimmed) && VERB_HINT.test(trimmed);
 }
 
 function adjustSentenceLength(text: string, targetAvg: number): string {
@@ -366,15 +427,26 @@ function adjustSentenceLength(text: string, targetAvg: number): string {
   const currentAvg =
     wordsOf(text).length / Math.max(sentences.length, 1);
 
-  // Too long vs target → split on conjunctions
+  // Too long vs target → split, but ONLY at a genuine clause boundary.
+  //
+  // The previous version split on any "and"/"but"/";" and produced
+  // fragments: "I bought salt and pepper and some bread" became
+  // "I bought salt. Pepper. Some bread." A candidate piece is only
+  // accepted as a sentence if it looks like an independent clause —
+  // it must start with a subject-ish token and contain a verb-ish token,
+  // and be long enough to stand alone.
   if (currentAvg > targetAvg + 6) {
     const next: string[] = [];
     for (const s of sentences) {
-      const split = s.split(/\s+(?:, and|and|, but|but|;)\s+/i);
-      if (split.length > 1 && wordsOf(s).length > targetAvg + 4) {
-        for (let i = 0; i < split.length; i++) {
-          let piece = split[i].trim();
-          if (!/[.!?]$/.test(piece)) piece += i === split.length - 1 && /[.!?]$/.test(s) ? s.slice(-1) : ".";
+      const pieces = s.split(/\s*(?:;|,\s+(?:and|but))\s+/i);
+      const longEnough = wordsOf(s).length > targetAvg + 4;
+      if (pieces.length > 1 && longEnough && pieces.every(isIndependentClause)) {
+        for (let i = 0; i < pieces.length; i++) {
+          let piece = pieces[i].trim();
+          if (!/[.!?]$/.test(piece)) {
+            piece +=
+              i === pieces.length - 1 && /[.!?]$/.test(s) ? s.slice(-1) : ".";
+          }
           next.push(capitalize(piece));
         }
       } else {
@@ -397,7 +469,18 @@ function adjustSentenceLength(text: string, targetAvg: number): string {
         !/[?]$/.test(cur)
       ) {
         const left = cur.replace(/[.!]$/, "");
-        const right = nxt.charAt(0).toLowerCase() + nxt.slice(1);
+        // Don't lowercase a word that is capitalised for its own reasons:
+        // the pronoun "I", or a proper noun. Only downcase when the rest
+        // of the word is lowercase and it isn't a standalone "I".
+        const firstWord = nxt.split(/\s+/)[0]?.replace(/[^A-Za-z']/g, "") ?? "";
+        const safeToLower =
+          firstWord.length > 1 &&
+          firstWord !== "I" &&
+          firstWord.slice(1) === firstWord.slice(1).toLowerCase() &&
+          !PROPER_NOUN_HINT.test(firstWord);
+        const right = safeToLower
+          ? nxt.charAt(0).toLowerCase() + nxt.slice(1)
+          : nxt;
         next.push(`${left}, and ${right}`);
         i++;
       } else {
@@ -410,14 +493,66 @@ function adjustSentenceLength(text: string, targetAvg: number): string {
   return text;
 }
 
+/** A bullet / numbered list line, which must keep its marker and stay on its own line. */
+const LIST_LINE = /^\s*(?:[-*+•]|\d+[.)])\s+/;
+
+/**
+ * Rewrites a document while preserving its structure.
+ *
+ * `rewriteOne` only ever sees a single paragraph or list item, so blank
+ * lines, bullets and numbering survive. Previously the whole document was
+ * flattened through `tidy`, which collapsed every paragraph break and
+ * returned multi-page inputs as one unbroken line.
+ */
 export function rewriteToStyle(
-  input: textLike,
+  input: string,
   profile: StyleProfile | null,
 ): { rewritten: string; notes: string[] } {
+  const source = String(input || "").trim();
+  if (!source) {
+    return { rewritten: "", notes: ["Add some text to rewrite."] };
+  }
+
+  const noteSet = new Set<string>();
+  // Split into paragraphs, keeping the exact blank-line separators.
+  const blocks = source.split(/(\n\s*\n)/);
+
+  const rewritten = blocks
+    .map((block) => {
+      if (/^\n\s*\n$/.test(block)) return block; // separator, preserve as-is
+      // Within a paragraph, rewrite list items line by line.
+      const lines = block.split("\n");
+      const anyList = lines.some((l) => LIST_LINE.test(l));
+      if (anyList) {
+        return lines
+          .map((line) => {
+            const marker = line.match(LIST_LINE)?.[0] ?? "";
+            const body = line.slice(marker.length);
+            if (!body.trim()) return line;
+            const { text, notes } = rewriteOne(body, profile);
+            notes.forEach((n) => noteSet.add(n));
+            return `${marker}${text}`;
+          })
+          .join("\n");
+      }
+      if (!block.trim()) return block;
+      const { text, notes } = rewriteOne(block, profile);
+      notes.forEach((n) => noteSet.add(n));
+      return text;
+    })
+    .join("");
+
+  return { rewritten, notes: [...noteSet] };
+}
+
+function rewriteOne(
+  input: string,
+  profile: StyleProfile | null,
+): { text: string; notes: string[] } {
   const notes: string[] = [];
   let text = String(input || "").trim();
   if (!text) {
-    return { rewritten: "", notes: ["Add some text to rewrite."] };
+    return { text: "", notes };
   }
 
   // Baseline humanization: strip AI-ish filler
@@ -442,7 +577,7 @@ export function rewriteToStyle(
       "No writing samples yet — used general naturalization. Upload samples for a closer match to your voice.",
     );
     text = applyPairs(text, FORMAL_TO_CASUAL.slice(0, 12));
-    return { rewritten: tidy(text), notes };
+    return { text: tidy(text), notes };
   }
 
   if (profile.formalityScore < 0.45) {
@@ -486,16 +621,30 @@ export function rewriteToStyle(
 
   notes.push(...profile.toneNotes.slice(0, 2).map((n) => `Style cue: ${n}`));
 
-  return { rewritten: tidy(text), notes };
+  return { text: tidy(text), notes };
 }
 
-type textLike = string;
-
+/**
+ * Normalises whitespace and sentence capitalisation within a single block.
+ *
+ * The capitalisation rule only fires on a genuine sentence boundary:
+ * punctuation followed by whitespace. The old `([.!?])\s*([a-z])` pattern
+ * matched zero whitespace, so "example.com" became "Example. Com" and
+ * "3.5" / "e.g." were mangled the same way.
+ */
 function tidy(text: string): string {
   return text
-    .replace(/\s{2,}/g, " ")
-    .replace(/\s+([,.!?;:])/g, "$1")
-    .replace(/([.!?])\s*([a-z])/g, (_, p, c) => `${p} ${c.toUpperCase()}`)
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]+([,.!?;:])/g, "$1")
+    .replace(
+      // require real whitespace after the terminator
+      /([.!?])(\s+)([a-z])/g,
+      (match, punct: string, gap: string, ch: string, offset: number) => {
+        const preceding = text.slice(Math.max(0, offset - 12), offset + 1);
+        if (ABBREVIATIONS.test(preceding)) return match;
+        return `${punct}${gap}${ch.toUpperCase()}`;
+      },
+    )
     .replace(/^\s*[a-z]/, (c) => c.toUpperCase())
     .trim();
 }
