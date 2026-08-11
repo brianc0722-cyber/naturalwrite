@@ -1,7 +1,7 @@
 /**
  * Extracts plain text from uploaded documents of many types:
  * plain text / markdown / csv / log / json, HTML, RTF (best-effort),
- * DOCX (via mammoth), and PDF (via pdf-parse).
+ * DOCX (via mammoth), and PDF (via unpdf).
  *
  * Throws ExtractError with a friendly message for unsupported types
  * (images, spreadsheets, archives, etc.).
@@ -79,12 +79,16 @@ export async function extractTextFromBuffer(
   const lower = fileName.toLowerCase();
   const ext = lower.includes(".") ? lower.split(".").pop() ?? "" : "";
 
-  if (TEXT_EXTS.has(ext) || mimeType.startsWith("text/")) {
-    return buffer.toString("utf8").replace(/\u0000/g, "").trim();
-  }
-
+  // HTML must be tested BEFORE the generic text branch: browsers send
+  // .html files as "text/html", which matches `startsWith("text/")`, so
+  // the plain-text branch used to win and markup reached the detector
+  // verbatim (tags, entities and all).
   if (ext === "html" || ext === "htm" || mimeType.includes("html")) {
     return htmlToText(buffer.toString("utf8"));
+  }
+
+  if (TEXT_EXTS.has(ext) || mimeType.startsWith("text/")) {
+    return buffer.toString("utf8").replace(/\u0000/g, "").trim();
   }
 
   if (ext === "rtf" || mimeType.includes("rtf")) {
