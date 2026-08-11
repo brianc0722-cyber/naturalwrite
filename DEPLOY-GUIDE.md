@@ -125,7 +125,12 @@ git push -u origin main
 1. In "Key" type exactly: `DATABASE_URL`
 2. In "Value" paste the Neon connection string you copied in Part 3
 3. Click **Add**
-4. Click the big **Deploy** button (blue)
+4. *(Optional)* To enable the generative-AI second opinion on scans, also add
+   `OPENAI_API_KEY`. Leaving it out keeps every scan local — the app falls back
+   to its built-in heuristics. Be aware that setting it sends up to ~14 KB of
+   each scanned document to OpenAI. `OPENAI_BASE_URL` and `OPENAI_MODEL` are
+   optional overrides.
+5. Click the big **Deploy** button (blue)
 
 ### Step 4.4 — Wait for the magic
 1. You'll see a progress log: "Building" → "Ready" (about 1 minute)
@@ -141,9 +146,18 @@ git push -u origin main
 ## PART 5 — Use it (and install the app icon)
 
 1. Open your permanent Vercel URL
-2. Click the green **Install NaturalWrite** button in the top-right corner
-3. Your browser installs it — the icon appears on your taskbar/home screen
-4. Open it anytime — it works forever, like a real app
+2. Install it as an app using your **browser's own** menu:
+   - **Chrome / Edge (desktop):** the install icon at the right of the address
+     bar, or ⋮ menu → *Cast, save and share* → *Install page as app*
+   - **Safari (iPhone/iPad):** Share → *Add to Home Screen*
+   - **Chrome (Android):** ⋮ menu → *Add to Home screen*
+3. The icon appears on your taskbar/home screen and opens like a real app
+
+> **Note:** the in-page **Install NaturalWrite** button only lights up when the
+> browser offers an install prompt. This app ships a manifest and icons but no
+> service worker, which Chrome also requires before it will fire that prompt,
+> so the button currently falls back to showing these manual instructions.
+> Installing via the browser menu above works today.
 
 **Daily use:**
 - **Upload samples:** drag a `.txt` or `.md` file onto the dashed box (or click it)

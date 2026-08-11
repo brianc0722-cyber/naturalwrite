@@ -9,26 +9,80 @@ rewrites any draft in your style.
 - Upload writing samples (.txt / .md) or paste text
 - Automatic style-profile analysis (sentence length, formality, contractions, tone notes, signature phrases)
 - Rewrite any draft in your learned voice — no character limit
-- AI Content Scanner: upload any document (.txt, .md, .docx, .pdf, .html, .rtf, and more) or paste text and get an originality score with per-signal explanations, cross-checked against your own writing style
+- AI Content Scanner: upload a document (.txt, .md, .docx, .pdf, .html, .rtf) or paste text and get a stylistic AI score with per-signal explanations, cross-checked against your own writing style
 - Scan history with per-document verdicts
 - Sample library with view/delete
-- Database tables auto-create on first run — no manual SQL
-- PWA: installable to home screen / taskbar with app icon
+- Database tables auto-create on first run, with real Drizzle migrations in `./drizzle`
+- PWA manifest and icons included (see the install caveat in DEPLOY-GUIDE.md)
 
 ## Stack
 
 - Next.js 16 (App Router) + React 19 + TypeScript
 - PostgreSQL + Drizzle ORM
 - Tailwind CSS 4
+- Vitest for unit tests
+
+Requires **Node 22+** (`unpdf` and Next 16 both need it).
 
 ## Run locally
 
 ```bash
 npm install
 cp .env.example .env   # set DATABASE_URL
-npx drizzle-kit push   # create tables
+npm run db:migrate     # apply migrations from ./drizzle
 npm run dev            # http://localhost:3000
 ```
+
+Tables also auto-create on first request via `src/lib/bootstrap.ts`, so the
+migrate step is optional locally. Set `SKIP_DB_BOOTSTRAP=1` in production if
+migrations are applied as a deploy step.
+
+### Scripts
+
+| Command | Purpose |
+|---|---|
+| `npm run dev` | Development server |
+| `npm run build` / `npm start` | Production build and serve |
+| `npm test` | Vitest unit tests |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run lint` | ESLint |
+| `npm run db:generate` | Generate a migration from `src/db/schema.ts` |
+| `npm run db:migrate` | Apply migrations |
+
+## Optional: generative-AI second opinion
+
+Set `OPENAI_API_KEY` to have each scan cross-checked by a language model.
+
+> **Privacy:** with the key set, up to ~14 KB of the scanned text is sent to
+> the configured endpoint. Leave it unset to keep every scan on your own
+> infrastructure — the app falls back to local heuristics automatically.
+
+`OPENAI_BASE_URL` and `OPENAI_MODEL` override the endpoint and model.
+
+## API
+
+| Route | Methods | Purpose |
+|---|---|---|
+| `/api/health` | GET | Liveness probe |
+| `/api/samples` | GET, POST | List and add writing samples |
+| `/api/samples/[id]` | DELETE | Remove a sample, rebuild the profile |
+| `/api/style` | GET | Current style profile and summary |
+| `/api/rewrite` | POST | Rewrite text in the learned voice |
+| `/api/scan` | GET, POST | Scan a document; list recent scans |
+| `/api/scan/[id]` | DELETE | Delete a scan from history |
+
+Write routes are rate limited per client IP (see `src/lib/rate-limit.ts`).
+
+> **Note:** the app currently has **no authentication** — every visitor shares
+> one sample library, style profile, and scan history. Do not expose it
+> publicly with data you would not want anyone to read or delete.
+
+## About the AI score
+
+The scanner measures *stylistic* markers associated with LLM output. It cannot
+establish authorship: formal human writing (academic, legal, corporate) tends
+to score high, and lightly edited AI tends to score low. Treat the number as a
+prompt to look closer, never as evidence of misconduct.
 
 ## Deploy permanently (free, URL never changes)
 
