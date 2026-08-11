@@ -13,7 +13,7 @@ rewrites any draft in your style.
 - Scan history with per-document verdicts
 - Sample library with view/delete
 - Database tables auto-create on first run, with real Drizzle migrations in `./drizzle`
-- PWA manifest and icons included (see the install caveat in DEPLOY-GUIDE.md)
+- Installable PWA: manifest, icons, and an offline-capable service worker
 
 ## Stack
 

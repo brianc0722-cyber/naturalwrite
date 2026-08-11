@@ -146,18 +146,23 @@ git push -u origin main
 ## PART 5 — Use it (and install the app icon)
 
 1. Open your permanent Vercel URL
-2. Install it as an app using your **browser's own** menu:
+2. Click **Install NaturalWrite** in the top right. The app ships a manifest,
+   icons, and a service worker, so Chrome and Edge fire a real install prompt.
+3. The icon appears on your taskbar/home screen and opens like a real app
+
+If the button doesn't prompt (Safari never does — it has no install-prompt
+API), use your browser's own menu instead:
+
    - **Chrome / Edge (desktop):** the install icon at the right of the address
      bar, or ⋮ menu → *Cast, save and share* → *Install page as app*
    - **Safari (iPhone/iPad):** Share → *Add to Home Screen*
    - **Chrome (Android):** ⋮ menu → *Add to Home screen*
-3. The icon appears on your taskbar/home screen and opens like a real app
 
-> **Note:** the in-page **Install NaturalWrite** button only lights up when the
-> browser offers an install prompt. This app ships a manifest and icons but no
-> service worker, which Chrome also requires before it will fire that prompt,
-> so the button currently falls back to showing these manual instructions.
-> Installing via the browser menu above works today.
+> **Note:** the install prompt requires HTTPS, which your Vercel URL provides
+> automatically. The service worker is not registered during local `npm run
+> dev`, so test installability against a production build or the deployed URL.
+> Once installed, the app shell loads offline; scanning and rewriting still
+> need the network because they run on the server.
 
 **Daily use:**
 - **Upload samples:** drag a `.txt` or `.md` file onto the dashed box (or click it)
