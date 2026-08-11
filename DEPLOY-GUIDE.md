@@ -130,7 +130,11 @@ git push -u origin main
    to its built-in heuristics. Be aware that setting it sends up to ~14 KB of
    each scanned document to OpenAI. `OPENAI_BASE_URL` and `OPENAI_MODEL` are
    optional overrides.
-5. Click the big **Deploy** button (blue)
+5. *(Strongly recommended)* Add `APP_PASSWORD` with a password of your choice.
+   Without it, **anyone who discovers your URL can read every writing sample
+   and scan you store, and can delete them.** With it, the whole app requires
+   sign-in. It is one shared password for you, not multi-user accounts.
+6. Click the big **Deploy** button (blue)
 
 ### Step 4.4 — Wait for the magic
 1. You'll see a progress log: "Building" → "Ready" (about 1 minute)

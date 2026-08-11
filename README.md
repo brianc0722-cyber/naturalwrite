@@ -13,6 +13,7 @@ rewrites any draft in your style.
 - Scan history with per-document verdicts
 - Sample library with view/delete
 - Database tables auto-create on first run, with real Drizzle migrations in `./drizzle`
+- Optional password protection for the whole app via `APP_PASSWORD` (off by default)
 - Installable PWA: manifest, icons, and an offline-capable service worker
 
 ## Stack
@@ -73,9 +74,35 @@ Set `OPENAI_API_KEY` to have each scan cross-checked by a language model.
 
 Write routes are rate limited per client IP (see `src/lib/rate-limit.ts`).
 
-> **Note:** the app currently has **no authentication** — every visitor shares
-> one sample library, style profile, and scan history. Do not expose it
-> publicly with data you would not want anyone to read or delete.
+## Password protection
+
+By default the app runs **completely open**: every visitor shares one sample
+library, style profile, and scan history, and anyone who knows the URL can read
+or delete that data.
+
+To lock it down, set a single environment variable:
+
+```bash
+APP_PASSWORD=your-password-here
+```
+
+With it set, all pages and API routes require sign-in at `/login`. Leaving it
+blank or unset restores the original open behaviour exactly — useful for local
+development.
+
+Details worth knowing:
+
+- It is **one shared secret, not user accounts.** There is no per-user data
+  separation and no record of who did what. The data model is single-tenant by
+  design (one profile, one library), so this matches how the app actually works.
+- The session is a signed, `HttpOnly`, `SameSite=Lax` cookie valid for 30 days.
+- **Changing `APP_PASSWORD` immediately signs out every existing session.**
+- `/api/health` stays public so uptime checks and platform probes keep working.
+- Login attempts are rate limited to 8 per minute per client IP.
+
+> If you need genuine multi-user accounts — separate writing voices per person —
+> that is a larger change: a users table, a `user_id` on all four tables, and
+> per-user scoping of every query.
 
 ## About the AI score
 

@@ -5,6 +5,7 @@ import {
   rebuildStyleProfile,
 } from "@/lib/samples";
 import { ensureSchema } from "@/lib/bootstrap";
+import { authEnabled } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,7 @@ export default async function HomePage() {
               }
             : null
         }
+        authEnabled={authEnabled()}
       />
     </main>
   );

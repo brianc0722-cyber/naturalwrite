@@ -5,6 +5,7 @@ import type { StyleProfile } from "@/db/schema";
 import { contractionLabel } from "@/lib/style-analyzer";
 import { InstallButton } from "@/components/install-button";
 import { AiScanner } from "@/components/ai-scanner";
+import { SignOutButton } from "@/components/sign-out-button";
 
 export type SampleRow = {
   id: number;
@@ -26,6 +27,8 @@ export type StyleRow = {
 type Props = {
   initialSamples: SampleRow[];
   initialStyle: StyleRow;
+  /** True when APP_PASSWORD is configured; shows the sign-out control. */
+  authEnabled?: boolean;
 };
 
 function formatDate(value: string | Date) {
@@ -57,7 +60,11 @@ function Metric({
   );
 }
 
-export function NaturalWriteApp({ initialSamples, initialStyle }: Props) {
+export function NaturalWriteApp({
+  initialSamples,
+  initialStyle,
+  authEnabled = false,
+}: Props) {
   const [samples, setSamples] = useState<SampleRow[]>(initialSamples);
   const [style, setStyle] = useState<StyleRow>(initialStyle);
   const [title, setTitle] = useState("");
@@ -218,6 +225,7 @@ export function NaturalWriteApp({ initialSamples, initialStyle }: Props) {
           </p>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-3">
+          {authEnabled ? <SignOutButton /> : null}
           <InstallButton />
           <div className="flex gap-3">
             <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
