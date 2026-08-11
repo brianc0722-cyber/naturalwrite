@@ -60,15 +60,48 @@ function htmlToText(html: string): string {
   ).trim();
 }
 
+/**
+ * RTF "destination" groups whose contents are metadata, not document text.
+ * Only these are dropped wholesale. The previous rule deleted ANY group
+ * beginning with a control word (`/\{\\[^{}]+\}/`), which erased the whole
+ * file for a minimal document like `{\rtf1\ansi Café notes.}` — the outer
+ * group matched because it contained no nested braces.
+ */
+const RTF_DROP_GROUPS =
+  /\{\\\*?\\?(?:fonttbl|colortbl|stylesheet|info|pict|object|header|footer|footnote|generator|listtable|listoverridetable|rsidtbl|themedata|colorschememapping|latentstyles|datastore|xmlnstbl)\b[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/gi;
+
 function rtfToText(rtf: string): string {
-  // Best-effort RTF: drop groups that aren't text, control words, braces.
-  return rtf
-    .replace(/\{\\[^{}]+\}/g, " ")
-    .replace(/\\[a-zA-Z]+-?\d* ?/g, " ")
-    .replace(/[{}]/g, "")
-    .replace(/\\['"][0-9a-fA-F]{2}/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  // Best-effort RTF: drop metadata groups, decode escapes, strip control words.
+  return (
+    rtf
+      .replace(RTF_DROP_GROUPS, " ")
+      // Hex escapes must be handled BEFORE control words are stripped —
+      // the control-word rule would otherwise consume the leading
+      // backslash and leave the hex digits behind as stray text. Decode
+      // them (cp1252-ish) rather than blanking them, so "caf\'e9" becomes
+      // "café" instead of losing the character entirely.
+      .replace(/\\'([0-9a-fA-F]{2})/g, (_, hex) =>
+        String.fromCharCode(parseInt(hex, 16)),
+      )
+      // Escaped literals \\ \{ \} are real characters, but the structural
+      // brace-strip below would eat the braces. Park them on sentinels
+      // (chars that cannot appear in RTF source) and restore at the end.
+      .replace(/\\\\/g, "\u0001")
+      .replace(/\\\{/g, "\u0002")
+      .replace(/\\\}/g, "\u0003")
+      .replace(/\\~/g, " ")
+      // \par, \line, \tab and friends are breaks, not word separators.
+      .replace(/\\(?:par|line|sect|page)\b ?/g, "\n")
+      .replace(/\\tab\b ?/g, "\t")
+      .replace(/\\[a-zA-Z]+-?\d* ?/g, " ")
+      .replace(/[{}]/g, "")
+      .replace(/\u0001/g, "\\")
+      .replace(/\u0002/g, "{")
+      .replace(/\u0003/g, "}")
+      .replace(/[ \t]+/g, " ")
+      .replace(/\s*\n\s*/g, "\n")
+      .trim()
+  );
 }
 
 export async function extractTextFromBuffer(

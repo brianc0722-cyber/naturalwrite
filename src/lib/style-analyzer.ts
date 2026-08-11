@@ -95,7 +95,12 @@ function topFrequent(items: string[], limit: number, minCount = 2): string[] {
 }
 
 export function analyzeTexts(samples: string[]): StyleProfile {
-  const combined = samples.filter((s) => s.trim().length > 0).join("\n\n");
+  // Count only samples with real content. `samples.length` was used below,
+  // which meant a batch of blank strings reported sampleCount > 0 and made
+  // callers believe a usable style profile existed (style-analyzer.ts:575,
+  // api/scan/route.ts hasProfile).
+  const nonEmpty = samples.filter((s) => s.trim().length > 0);
+  const combined = nonEmpty.join("\n\n");
   const words = wordsOf(combined);
   const sentences = sentencesOf(combined);
   const wordCount = words.length || 1;
@@ -188,7 +193,7 @@ export function analyzeTexts(samples: string[]): StyleProfile {
     preferredOpeners,
     toneNotes,
     sampleWordCount: words.length,
-    sampleCount: samples.length,
+    sampleCount: nonEmpty.length,
   };
 }
 
