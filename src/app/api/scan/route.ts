@@ -118,6 +118,22 @@ export async function POST(request: Request) {
 
     const style = await getActiveStyleProfile();
     const base = detectAi(text, style?.profile ?? null);
+
+    // The heuristics tokenize Latin script only. On other writing systems every
+    // token is stripped, so the detector would return its neutral starting prior
+    // (18) dressed up as a real verdict — a confident-looking score for text it
+    // never actually read. Refuse instead, before spending an LLM call or
+    // persisting a meaningless row.
+    if (base.wordCount === 0) {
+      return NextResponse.json(
+        {
+          error:
+            "This text couldn't be analyzed. The scanner currently understands Latin-script languages (English and similar); it found no readable words here.",
+        },
+        { status: 422 },
+      );
+    }
+
     const aiOpinion = await getAiSecondOpinion(text, base.score);
     const detection = { ...base, aiOpinion };
 
