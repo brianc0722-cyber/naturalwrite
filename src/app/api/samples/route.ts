@@ -13,10 +13,16 @@ import {
   clientKeyFromRequest,
   rateLimitHeaders,
 } from "@/lib/rate-limit";
+import {
+  MAX_SAMPLE_CHARS,
+  MAX_SAMPLE_FILE_BYTES,
+  MAX_SAMPLE_LABEL,
+} from "@/lib/upload-limits";
 
 export const dynamic = "force-dynamic";
 
-const MAX_CONTENT = 50_000;
+// Shared with the client dropzone so both sides quote the same number.
+const MAX_CONTENT = MAX_SAMPLE_CHARS;
 const MAX_SAMPLES = 40;
 
 /** Each upload triggers a full style-profile rebuild over every sample. */
@@ -83,9 +89,11 @@ export async function POST(request: Request) {
           );
         }
 
-        if (file.size > MAX_CONTENT * 2) {
+        if (file.size > MAX_SAMPLE_FILE_BYTES) {
           return NextResponse.json(
-            { error: "File is too large. Keep samples under ~50KB of text." },
+            {
+              error: `File is too large. Keep samples under ~${MAX_SAMPLE_LABEL} of text.`,
+            },
             { status: 400 },
           );
         }

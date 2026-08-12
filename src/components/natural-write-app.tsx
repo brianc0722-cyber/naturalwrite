@@ -1,11 +1,16 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { StyleProfile } from "@/db/schema";
 import { contractionLabel } from "@/lib/style-analyzer";
 import { InstallButton } from "@/components/install-button";
 import { AiScanner } from "@/components/ai-scanner";
 import { SignOutButton } from "@/components/sign-out-button";
+import {
+  MAX_SAMPLE_FILE_BYTES,
+  MAX_SAMPLE_LABEL,
+  formatBytes,
+} from "@/lib/upload-limits";
 
 export type SampleRow = {
   id: number;
@@ -84,6 +89,12 @@ export function NaturalWriteApp({
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [tab, setTab] = useState<"write" | "scan">("write");
   const fileRef = useRef<HTMLInputElement>(null);
+  // A rewrite can take a while; abort it if the user leaves mid-request.
+  const rewriteAbort = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => rewriteAbort.current?.abort();
+  }, []);
 
   const profile = style?.profile ?? null;
   const totalWords = useMemo(
@@ -132,6 +143,16 @@ export function NaturalWriteApp({
 
   async function onFileChosen(file: File | null) {
     if (!file) return;
+    // Mirrors the server check in /api/samples so an oversized file fails
+    // instantly instead of after a full upload that cannot be accepted.
+    if (file.size > MAX_SAMPLE_FILE_BYTES) {
+      if (fileRef.current) fileRef.current.value = "";
+      flash(
+        "err",
+        `That file is ${formatBytes(file.size)}. Keep samples under ~${MAX_SAMPLE_LABEL} of text.`,
+      );
+      return;
+    }
     const fd = new FormData();
     fd.append("file", file);
     if (title.trim()) fd.append("title", title.trim());
@@ -168,6 +189,9 @@ export function NaturalWriteApp({
 
   async function onRewrite(e: React.FormEvent) {
     e.preventDefault();
+    rewriteAbort.current?.abort();
+    const ac = new AbortController();
+    rewriteAbort.current = ac;
     setBusy("rewrite");
     setNotes([]);
     try {
@@ -175,6 +199,7 @@ export function NaturalWriteApp({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: input }),
+        signal: ac.signal,
       });
       const data = await res.json();
       if (!res.ok) {
@@ -191,10 +216,14 @@ export function NaturalWriteApp({
       } else {
         flash("ok", "Rewritten using your writing-style profile.");
       }
-    } catch {
+    } catch (err) {
+      if ((err as Error)?.name === "AbortError") return;
       flash("err", "Network error during rewrite.");
     } finally {
-      setBusy(null);
+      if (rewriteAbort.current === ac) {
+        rewriteAbort.current = null;
+        setBusy(null);
+      }
     }
   }
 
@@ -375,7 +404,7 @@ export function NaturalWriteApp({
                 {busy === "upload" ? "Uploading…" : "Drop a .txt or .md file"}
               </p>
               <p className="mt-1 text-xs text-slate-500">
-                or click to browse — max ~50KB of text
+                or click to browse — max ~{MAX_SAMPLE_LABEL} of text
               </p>
               <input
                 ref={fileRef}
@@ -459,9 +488,9 @@ export function NaturalWriteApp({
 
             {profile?.toneNotes?.length ? (
               <ul className="mt-5 space-y-2">
-                {profile.toneNotes.slice(0, 5).map((note) => (
+                {profile.toneNotes.slice(0, 5).map((note, i) => (
                   <li
-                    key={note}
+                    key={`${i}-${note}`}
                     className="flex gap-2 text-sm text-emerald-50/90"
                   >
                     <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
@@ -477,9 +506,9 @@ export function NaturalWriteApp({
                   Signature phrases
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {profile.signaturePhrases.slice(0, 6).map((p) => (
+                  {profile.signaturePhrases.slice(0, 6).map((p, i) => (
                     <span
-                      key={p}
+                      key={`${i}-${p}`}
                       className="rounded-full border border-white/10 bg-white/10 px-2.5 py-1 text-xs text-emerald-50"
                     >
                       {p}
@@ -563,8 +592,8 @@ export function NaturalWriteApp({
                 </p>
                 {notes.length ? (
                   <ul className="mt-4 space-y-1.5 border-t border-emerald-100 pt-3">
-                    {notes.map((n) => (
-                      <li key={n} className="text-xs text-emerald-900/80">
+                    {notes.map((n, i) => (
+                      <li key={`${i}-${n}`} className="text-xs text-emerald-900/80">
                         • {n}
                       </li>
                     ))}

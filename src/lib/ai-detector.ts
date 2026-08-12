@@ -1,5 +1,6 @@
 import type { ScanSignal, ScanStyleMatch, StyleProfile } from "@/db/schema";
 import { formalityOf } from "@/lib/style-analyzer";
+import { SCORE_HIGH, SCORE_LOW } from "@/lib/score-bands";
 
 /**
  * Shown alongside every result. This detector measures stylistic markers
@@ -493,9 +494,9 @@ export function detectAi(
   // not provenance evidence: formal human prose scores high and lightly
   // edited AI scores low. See DISCLAIMER below, surfaced in the UI.
   const verdict =
-    score < 35
+    score < SCORE_LOW
       ? "Few AI-style patterns"
-      : score < 65
+      : score < SCORE_HIGH
         ? "Some AI-style patterns"
         : "Many AI-style patterns";
 

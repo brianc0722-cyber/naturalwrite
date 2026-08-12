@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AiOpinion, ScanSignal, ScanStyleMatch } from "@/db/schema";
 import { DETECTOR_DISCLAIMER } from "@/lib/ai-detector";
+import { SCORE_HIGH, SCORE_LOW } from "@/lib/score-bands";
 import {
   MAX_UPLOAD_BYTES,
   MAX_UPLOAD_LABEL,
@@ -33,14 +34,14 @@ type Detection = {
 };
 
 function scoreColor(score: number) {
-  if (score < 35) return "#059669";
-  if (score < 65) return "#d97706";
+  if (score < SCORE_LOW) return "#059669";
+  if (score < SCORE_HIGH) return "#d97706";
   return "#e11d48";
 }
 
 function scoreLabel(score: number) {
-  if (score < 35) return "Original";
-  if (score < 65) return "Mixed";
+  if (score < SCORE_LOW) return "Original";
+  if (score < SCORE_HIGH) return "Mixed";
   return "AI-likely";
 }
 
@@ -97,26 +98,42 @@ export function AiScanner({ hasProfile }: { hasProfile: boolean }) {
   const [result, setResult] = useState<{ detection: Detection; fileName: string } | null>(null);
   const [history, setHistory] = useState<ScanRow[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Aborted on unmount so a scan or history load that is still in flight when
+  // the user navigates away does not resolve into an unmounted component.
+  const inFlight = useRef<AbortController | null>(null);
 
-  const loadHistory = useCallback(async () => {
+  const loadHistory = useCallback(async (signal?: AbortSignal) => {
     try {
-      const res = await fetch("/api/scan");
+      const res = await fetch("/api/scan", { signal });
       const data = await res.json();
       if (res.ok) setHistory(Array.isArray(data.scans) ? data.scans : []);
     } catch {
-      /* ignore */
+      /* ignored: aborted, offline, or malformed - history is non-essential */
     }
   }, []);
 
   useEffect(() => {
-    void loadHistory();
+    const ac = new AbortController();
+    void loadHistory(ac.signal);
+    return () => ac.abort();
   }, [loadHistory]);
 
+  useEffect(() => {
+    return () => inFlight.current?.abort();
+  }, []);
+
   async function runScan(fd: FormData) {
+    inFlight.current?.abort();
+    const ac = new AbortController();
+    inFlight.current = ac;
     setScanning(true);
     setError(null);
     try {
-      const res = await fetch("/api/scan", { method: "POST", body: fd });
+      const res = await fetch("/api/scan", {
+        method: "POST",
+        body: fd,
+        signal: ac.signal,
+      });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "The scan failed.");
@@ -126,11 +143,18 @@ export function AiScanner({ hasProfile }: { hasProfile: boolean }) {
       setPaste("");
       setFile(null);
       if (fileRef.current) fileRef.current.value = "";
-      void loadHistory();
-    } catch {
+      // Awaited so the refresh is covered by the same abort controller and
+      // the result and its history row appear together.
+      await loadHistory(ac.signal);
+    } catch (err) {
+      // An abort is the user's own doing - leaving, or starting a new scan.
+      if ((err as Error)?.name === "AbortError") return;
       setError("Network error while scanning.");
     } finally {
-      setScanning(false);
+      if (inFlight.current === ac) {
+        inFlight.current = null;
+        setScanning(false);
+      }
     }
   }
 
@@ -152,8 +176,7 @@ export function AiScanner({ hasProfile }: { hasProfile: boolean }) {
     if (!name.trim()) setName(f.name);
   }
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function submitScan() {
     const fd = new FormData();
     if (mode === "file") {
       if (!file) {
@@ -293,7 +316,7 @@ export function AiScanner({ hasProfile }: { hasProfile: boolean }) {
           <button
             type="button"
             disabled={scanning}
-            onClick={(e) => void onSubmit(e as unknown as React.FormEvent)}
+            onClick={() => void submitScan()}
             className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {scanning ? (
@@ -372,9 +395,9 @@ export function AiScanner({ hasProfile }: { hasProfile: boolean }) {
                 </p>
                 {result.detection.aiOpinion.flags.length ? (
                   <ul className="mt-3 flex flex-wrap gap-2">
-                    {result.detection.aiOpinion.flags.map((f) => (
+                    {result.detection.aiOpinion.flags.map((f, i) => (
                       <li
-                        key={f}
+                        key={`${i}-${f}`}
                         className="rounded-full border border-indigo-200 bg-white px-2.5 py-1 text-xs text-indigo-900"
                       >
                         {f}
@@ -395,8 +418,8 @@ export function AiScanner({ hasProfile }: { hasProfile: boolean }) {
             )}
 
             <ul className="mt-6 space-y-4 border-t border-slate-100 pt-5">
-              {result.detection.signals.map((s) => (
-                <li key={s.label} className="flex items-start gap-3">
+              {result.detection.signals.map((s, i) => (
+                <li key={`${i}-${s.label}`} className="flex items-start gap-3">
                   <span
                     className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
                       s.points > 0 ? "bg-rose-500" : "bg-emerald-500"

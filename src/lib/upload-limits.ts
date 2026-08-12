@@ -45,6 +45,21 @@ export const MAX_UPLOAD_LABEL = `${
   Number.isInteger(MAX_UPLOAD_MB) ? MAX_UPLOAD_MB : MAX_UPLOAD_MB.toFixed(1)
 } MB`;
 
+/**
+ * Writing samples are a separate, much smaller limit than scanner documents:
+ * they are stored as text and every upload triggers a full profile rebuild
+ * over the whole library, so a huge sample is a cost multiplier rather than a
+ * one-off. Shared with the client so the dropzone can reject an oversized file
+ * before spending the upload.
+ */
+export const MAX_SAMPLE_CHARS = 50_000;
+
+/** File-size ceiling for a sample upload; ~2 bytes per character of headroom. */
+export const MAX_SAMPLE_FILE_BYTES = MAX_SAMPLE_CHARS * 2;
+
+/** Human-readable sample limit for UI copy, e.g. "50 KB". */
+export const MAX_SAMPLE_LABEL = `${Math.round(MAX_SAMPLE_CHARS / 1000)} KB`;
+
 /** Formats a byte count for error messages, e.g. "6.2 MB". */
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
