@@ -12,10 +12,14 @@ import {
   clientKeyFromRequest,
   rateLimitHeaders,
 } from "@/lib/rate-limit";
+import {
+  MAX_UPLOAD_BYTES,
+  MAX_UPLOAD_LABEL,
+  formatBytes,
+} from "@/lib/upload-limits";
 
 export const dynamic = "force-dynamic";
 
-const MAX_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_TEXT = 300_000;
 
 /**
@@ -63,10 +67,12 @@ export async function POST(request: Request) {
 
       if (file instanceof File) {
         fileName = file.name || "Uploaded document";
-        if (file.size > MAX_FILE_BYTES) {
+        if (file.size > MAX_UPLOAD_BYTES) {
           return NextResponse.json(
-            { error: "File is too large. Keep documents under 8 MB." },
-            { status: 400 },
+            {
+              error: `That file is ${formatBytes(file.size)}. Keep documents under ${MAX_UPLOAD_LABEL}.`,
+            },
+            { status: 413 },
           );
         }
         if (file.size === 0) {

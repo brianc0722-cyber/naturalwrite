@@ -3,6 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AiOpinion, ScanSignal, ScanStyleMatch } from "@/db/schema";
 import { DETECTOR_DISCLAIMER } from "@/lib/ai-detector";
+import {
+  MAX_UPLOAD_BYTES,
+  MAX_UPLOAD_LABEL,
+  formatBytes,
+} from "@/lib/upload-limits";
 
 type ScanRow = {
   id: number;
@@ -131,6 +136,18 @@ export function AiScanner({ hasProfile }: { hasProfile: boolean }) {
 
   function onPick(f: File | null) {
     if (!f) return;
+    // Checked here as well as on the server: on Vercel a body over 4.5 MB is
+    // rejected by the platform before the route runs, which surfaces as an
+    // opaque 413 with no JSON body. Catching it client-side gives a real
+    // message instantly instead of after a long upload that cannot succeed.
+    if (f.size > MAX_UPLOAD_BYTES) {
+      setFile(null);
+      setError(
+        `That file is ${formatBytes(f.size)}. Keep documents under ${MAX_UPLOAD_LABEL}.`,
+      );
+      return;
+    }
+    setError(null);
     setFile(f);
     if (!name.trim()) setName(f.name);
   }
@@ -247,7 +264,8 @@ export function AiScanner({ hasProfile }: { hasProfile: boolean }) {
                 {file ? file.name : "Drop any document here"}
               </p>
               <p className="mt-1 text-xs text-slate-500">
-                .txt · .md · .docx · .pdf · .html · .rtf · and more — max 8 MB
+                .txt · .md · .docx · .pdf · .html · .rtf · and more — max{" "}
+                {MAX_UPLOAD_LABEL}
               </p>
               <input
                 ref={fileRef}
