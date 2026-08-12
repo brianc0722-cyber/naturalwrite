@@ -60,6 +60,29 @@ Set `OPENAI_API_KEY` to have each scan cross-checked by a language model.
 
 `OPENAI_BASE_URL` and `OPENAI_MODEL` override the endpoint and model.
 
+`OPENAI_BASE_URL` must be `https` and point at a recognised provider host
+(OpenAI, OpenRouter, Groq, Mistral, Together, Anthropic, Google), because that
+URL receives your API key in an `Authorization` header. `http://localhost` is
+allowed for locally hosted models. To use a different endpoint deliberately,
+set `OPENAI_BASE_URL_ALLOW_ANY=1`.
+
+## Upload limits
+
+Documents sent to the scanner are capped at **4 MB** by default, matching the
+hard request-body limit on Vercel Functions. To change it, set **both**:
+
+```
+MAX_UPLOAD_MB=4              # server-side enforcement
+NEXT_PUBLIC_MAX_UPLOAD_MB=4  # the number shown in the UI
+```
+
+They are separate because the client bundle can only read `NEXT_PUBLIC_*`
+variables. Setting only one leaves the interface advertising a limit the server
+does not enforce. Writing samples are capped separately at ~50 KB of text.
+
+Scanning is Latin-script only. A document with no recognisable words returns
+422 with an explanation rather than a misleading score.
+
 ## API
 
 | Route | Methods | Purpose |
@@ -146,13 +169,9 @@ prompt to look closer, never as evidence of misconduct.
 - `writing_samples` — uploaded/pasted samples
 - `style_profiles` — analyzed style (JSONB metrics + summary)
 - `rewrite_jobs` — history of rewrites
+- `ai_scans` — AI Content Scanner history (score, verdict, signals, style
+  match and any LLM second opinion, all JSONB)
 
-## API
-
-| Route | Method | Purpose |
-| --- | --- | --- |
-| `/api/samples` | GET/POST | List / add writing samples (file upload or JSON) |
-| `/api/samples/[id]` | DELETE | Remove a sample |
-| `/api/style` | GET/POST | Fetch / rebuild style profile |
-| `/api/rewrite` | POST | Rewrite text in the learned style |
-| `/api/health` | GET | Health check |
+`writing_samples` and `ai_scans` each carry a `public_id` UUID. That, not the
+serial `id`, is what appears in URLs, so the row identifiers in
+`/api/samples/[id]` and `/api/scan/[id]` cannot be enumerated.
