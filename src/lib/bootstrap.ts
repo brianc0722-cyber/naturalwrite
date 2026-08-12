@@ -27,6 +27,7 @@ export function ensureSchema(): Promise<void> {
       await db.execute(sql`
         CREATE TABLE IF NOT EXISTS writing_samples (
           id SERIAL PRIMARY KEY,
+          public_id UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
           title VARCHAR(200) NOT NULL DEFAULT 'Untitled sample',
           content TEXT NOT NULL,
           word_count INTEGER NOT NULL DEFAULT 0,
@@ -56,6 +57,7 @@ export function ensureSchema(): Promise<void> {
       await db.execute(sql`
         CREATE TABLE IF NOT EXISTS ai_scans (
           id SERIAL PRIMARY KEY,
+          public_id UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
           file_name VARCHAR(255) NOT NULL DEFAULT 'Pasted text',
           word_count INTEGER NOT NULL DEFAULT 0,
           score INTEGER NOT NULL,
@@ -70,6 +72,33 @@ export function ensureSchema(): Promise<void> {
         ALTER TABLE ai_scans
         ADD COLUMN IF NOT EXISTS ai_opinion JSONB
       `);
+
+      /**
+       * Upgrade path for databases created before public_id existed.
+       * CREATE TABLE IF NOT EXISTS is a no-op on an existing table, so the
+       * column has to be added explicitly. Added nullable first, backfilled,
+       * then constrained — adding it NOT NULL in one step fails on non-empty
+       * tables. gen_random_uuid() is built into Postgres 13+.
+       */
+      for (const table of ["writing_samples", "ai_scans"] as const) {
+        await db.execute(
+          sql`ALTER TABLE ${sql.identifier(table)}
+              ADD COLUMN IF NOT EXISTS public_id UUID DEFAULT gen_random_uuid()`,
+        );
+        await db.execute(
+          sql`UPDATE ${sql.identifier(table)}
+              SET public_id = gen_random_uuid() WHERE public_id IS NULL`,
+        );
+        await db.execute(
+          sql`ALTER TABLE ${sql.identifier(table)}
+              ALTER COLUMN public_id SET NOT NULL`,
+        );
+        await db.execute(
+          sql`CREATE UNIQUE INDEX IF NOT EXISTS ${sql.identifier(
+            `${table}_public_id_key`,
+          )} ON ${sql.identifier(table)} (public_id)`,
+        );
+      }
     })().catch((err) => {
       ready = null; // allow retry on the next request
       console.error("ensureSchema failed", err);

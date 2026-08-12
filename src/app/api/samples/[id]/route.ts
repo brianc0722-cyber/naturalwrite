@@ -12,11 +12,15 @@ import {
 
 export const dynamic = "force-dynamic";
 
-/**
- * Serial ids make deletion enumerable (DELETE /api/samples/1..n wipes
- * everything). Until real auth lands, throttle the enumeration.
- */
 const DELETE_LIMIT = { name: "samples-delete", max: 20, windowMs: 60_000 };
+
+/**
+ * Rows are addressed by their unguessable public_id. With serial ids,
+ * DELETE /api/samples/1..n wiped the whole table; rate limiting only slowed
+ * that down. A random uuid removes the enumeration entirely.
+ */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -31,15 +35,14 @@ export async function DELETE(request: Request, { params }: Params) {
     }
 
     await ensureSchema();
-    const { id: raw } = await params;
-    const id = Number(raw);
-    if (!Number.isFinite(id) || id <= 0) {
+    const { id } = await params;
+    if (!UUID_RE.test(id)) {
       return NextResponse.json({ error: "Invalid sample id." }, { status: 400 });
     }
 
     const deleted = await db
       .delete(writingSamples)
-      .where(eq(writingSamples.id, id))
+      .where(eq(writingSamples.publicId, id))
       .returning();
 
     if (deleted.length === 0) {

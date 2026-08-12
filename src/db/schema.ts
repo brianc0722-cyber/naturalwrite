@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   serial,
@@ -5,6 +6,7 @@ import {
   timestamp,
   integer,
   jsonb,
+  uuid,
   varchar,
 } from "drizzle-orm/pg-core";
 
@@ -31,6 +33,15 @@ export type StyleProfile = {
 
 export const writingSamples = pgTable("writing_samples", {
   id: serial("id").primaryKey(),
+  /**
+   * Unguessable id used in URLs. The serial `id` stays as the internal key,
+   * but exposing it let anyone enumerate DELETE /api/samples/1..n and wipe
+   * every row. Public routes address rows by this value instead.
+   */
+  publicId: uuid("public_id")
+    .notNull()
+    .unique()
+    .default(sql`gen_random_uuid()`),
   title: varchar("title", { length: 200 }).notNull().default("Untitled sample"),
   content: text("content").notNull(),
   wordCount: integer("word_count").notNull().default(0),
@@ -76,6 +87,11 @@ export type AiOpinion = {
 
 export const aiScans = pgTable("ai_scans", {
   id: serial("id").primaryKey(),
+  /** Unguessable id used in URLs — see writingSamples.publicId. */
+  publicId: uuid("public_id")
+    .notNull()
+    .unique()
+    .default(sql`gen_random_uuid()`),
   fileName: varchar("file_name", { length: 255 }).notNull().default("Pasted text"),
   wordCount: integer("word_count").notNull().default(0),
   score: integer("score").notNull(),

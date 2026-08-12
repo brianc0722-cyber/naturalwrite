@@ -17,7 +17,7 @@ function schemaColumns(table: string): string[] {
   const start = schema.indexOf(`pgTable("${table}"`);
   if (start === -1) throw new Error(`table ${table} missing from schema.ts`);
   const body = schema.slice(start, schema.indexOf("});", start));
-  return [...body.matchAll(/\b(?:serial|text|integer|jsonb|varchar|timestamp)\(\s*"([a-z_]+)"/g)]
+  return [...body.matchAll(/\b(?:serial|text|integer|jsonb|uuid|varchar|timestamp)\(\s*"([a-z_]+)"/g)]
     .map((m) => m[1]);
 }
 

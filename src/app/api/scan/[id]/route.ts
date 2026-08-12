@@ -11,8 +11,11 @@ import {
 
 export const dynamic = "force-dynamic";
 
-/** Same enumeration exposure as samples: serial ids, no auth. */
 const DELETE_LIMIT = { name: "scan-delete", max: 20, windowMs: 60_000 };
+
+/** Rows are addressed by their unguessable public_id, never the serial id. */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -27,12 +30,22 @@ export async function DELETE(request: Request, { params }: Params) {
     }
 
     await ensureSchema();
-    const { id: raw } = await params;
-    const id = Number(raw);
-    if (!Number.isFinite(id) || id <= 0) {
+    const { id } = await params;
+    if (!UUID_RE.test(id)) {
       return NextResponse.json({ error: "Invalid scan id." }, { status: 400 });
     }
-    await db.delete(aiScans).where(eq(aiScans.id, id));
+
+    const deleted = await db
+      .delete(aiScans)
+      .where(eq(aiScans.publicId, id))
+      .returning();
+
+    // Previously returned ok:true even when nothing matched, so the UI
+    // reported success for ids that were never there.
+    if (deleted.length === 0) {
+      return NextResponse.json({ error: "Scan not found." }, { status: 404 });
+    }
+
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("DELETE /api/scan/[id]", err);

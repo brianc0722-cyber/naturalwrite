@@ -9,6 +9,8 @@ import { SignOutButton } from "@/components/sign-out-button";
 
 export type SampleRow = {
   id: number;
+  /** Unguessable id used in API URLs; the serial id stays internal. */
+  publicId: string;
   title: string;
   content: string;
   wordCount: number;
@@ -79,7 +81,7 @@ export function NaturalWriteApp({
     null,
   );
   const [dragOver, setDragOver] = useState(false);
-  const [previewId, setPreviewId] = useState<number | null>(null);
+  const [previewId, setPreviewId] = useState<string | null>(null);
   const [tab, setTab] = useState<"write" | "scan">("write");
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -144,18 +146,18 @@ export function NaturalWriteApp({
     });
   }
 
-  async function onDelete(id: number) {
+  async function onDelete(publicId: string) {
     setBusy("delete");
     try {
-      const res = await fetch(`/api/samples/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/samples/${publicId}`, { method: "DELETE" });
       const data = await res.json();
       if (!res.ok) {
         flash("err", data.error || "Could not delete sample.");
         return;
       }
-      setSamples((prev) => prev.filter((s) => s.id !== id));
+      setSamples((prev) => prev.filter((s) => s.publicId !== publicId));
       setStyle(data.style);
-      if (previewId === id) setPreviewId(null);
+      if (previewId === publicId) setPreviewId(null);
       flash("ok", "Sample removed. Style profile refreshed.");
     } catch {
       flash("err", "Network error while deleting.");
@@ -206,7 +208,7 @@ export function NaturalWriteApp({
     }
   }
 
-  const preview = samples.find((s) => s.id === previewId) ?? null;
+  const preview = samples.find((s) => s.publicId === previewId) ?? null;
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
@@ -596,7 +598,7 @@ export function NaturalWriteApp({
               <ul className="divide-y divide-slate-100">
                 {samples.map((sample) => (
                   <li
-                    key={sample.id}
+                    key={sample.publicId}
                     className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between"
                   >
                     <div className="min-w-0 flex-1">
@@ -620,17 +622,17 @@ export function NaturalWriteApp({
                         type="button"
                         onClick={() =>
                           setPreviewId((id) =>
-                            id === sample.id ? null : sample.id,
+                            id === sample.publicId ? null : sample.publicId,
                           )
                         }
                         className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
                       >
-                        {previewId === sample.id ? "Hide" : "View"}
+                        {previewId === sample.publicId ? "Hide" : "View"}
                       </button>
                       <button
                         type="button"
                         disabled={busy === "delete"}
-                        onClick={() => void onDelete(sample.id)}
+                        onClick={() => void onDelete(sample.publicId)}
                         className="rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-medium text-rose-700 transition hover:bg-rose-50 disabled:opacity-50"
                       >
                         Delete

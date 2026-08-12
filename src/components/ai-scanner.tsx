@@ -6,6 +6,8 @@ import { DETECTOR_DISCLAIMER } from "@/lib/ai-detector";
 
 type ScanRow = {
   id: number;
+  /** Unguessable id used in API URLs; the serial id stays internal. */
+  publicId: string;
   fileName: string;
   wordCount: number;
   score: number;
@@ -154,9 +156,11 @@ export function AiScanner({ hasProfile }: { hasProfile: boolean }) {
     await runScan(fd);
   }
 
-  async function onDelete(id: number) {
-    await fetch(`/api/scan/${id}`, { method: "DELETE" });
-    setHistory((prev) => prev.filter((s) => s.id !== id));
+  async function onDelete(publicId: string) {
+    const res = await fetch(`/api/scan/${publicId}`, { method: "DELETE" });
+    // Only drop the row locally if the server actually deleted it.
+    if (!res.ok) return;
+    setHistory((prev) => prev.filter((s) => s.publicId !== publicId));
   }
 
   return (
@@ -418,7 +422,7 @@ export function AiScanner({ hasProfile }: { hasProfile: boolean }) {
           ) : (
             <ul className="divide-y divide-slate-100">
               {history.map((h) => (
-                <li key={h.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                <li key={h.publicId} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
                   <span
                     className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white"
                     style={{ backgroundColor: scoreColor(h.score) }}
@@ -435,7 +439,7 @@ export function AiScanner({ hasProfile }: { hasProfile: boolean }) {
                   </div>
                   <button
                     type="button"
-                    onClick={() => void onDelete(h.id)}
+                    onClick={() => void onDelete(h.publicId)}
                     className="shrink-0 rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium text-slate-500 transition hover:border-rose-200 hover:text-rose-700"
                   >
                     Delete
