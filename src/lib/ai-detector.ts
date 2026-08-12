@@ -1,6 +1,7 @@
 import type { ScanSignal, ScanStyleMatch, StyleProfile } from "@/db/schema";
 import { formalityOf } from "@/lib/style-analyzer";
 import { SCORE_HIGH, SCORE_LOW } from "@/lib/score-bands";
+import { wordsOf } from "@/lib/tokenize";
 
 /**
  * Shown alongside every result. This detector measures stylistic markers
@@ -185,14 +186,6 @@ const HEDGES =
 
 const PARALLEL =
   /\b(not only\b[\s\S]{0,80}?\bbut also|whether it's|whether it is|it is not just\b[\s\S]{0,80}?\bit is (also|about)|from\b[\s\S]{0,40}?\bto\b[\s\S]{0,40}?\bto\b)/gi;
-
-function wordsOf(text: string): string[] {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9'\s-]/g, " ")
-    .split(/\s+/)
-    .filter(Boolean);
-}
 
 function sentencesOf(text: string): string[] {
   return text

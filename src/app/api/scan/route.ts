@@ -7,6 +7,7 @@ import { detectAi } from "@/lib/ai-detector";
 import { ExtractError, extractTextFromBuffer } from "@/lib/text-extract";
 import { getActiveStyleProfile } from "@/lib/samples";
 import { getAiSecondOpinion } from "@/lib/llm-opinion";
+import { isLatinScript } from "@/lib/tokenize";
 import {
   checkRateLimit,
   clientKeyFromRequest,
@@ -119,16 +120,17 @@ export async function POST(request: Request) {
     const style = await getActiveStyleProfile();
     const base = detectAi(text, style?.profile ?? null);
 
-    // The heuristics tokenize Latin script only. On other writing systems every
-    // token is stripped, so the detector would return its neutral starting prior
-    // (18) dressed up as a real verdict — a confident-looking score for text it
-    // never actually read. Refuse instead, before spending an LLM call or
-    // persisting a meaningless row.
-    if (base.wordCount === 0) {
+    // The detector's evidence is English AI-style phrasing, transition words
+    // and contraction patterns. The tokenizer counts any script correctly, but
+    // counting Ukrainian words does not make an English-trained heuristic
+    // meaningful on Ukrainian: the score would collapse toward the neutral
+    // prior and be presented as a real verdict. Refuse instead, before
+    // spending an LLM call or persisting a meaningless row.
+    if (base.wordCount === 0 || !isLatinScript(text)) {
       return NextResponse.json(
         {
           error:
-            "This text couldn't be analyzed. The scanner currently understands Latin-script languages (English and similar); it found no readable words here.",
+            "This text couldn't be analyzed. The scanner's signals are trained on English and other Latin-script writing, so it has nothing meaningful to say about this document.",
         },
         { status: 422 },
       );

@@ -1,4 +1,5 @@
 import type { StyleProfile } from "@/db/schema";
+import { wordsOf } from "@/lib/tokenize";
 
 const CONTRACTIONS =
   /\b(I'm|I've|I'd|I'll|you're|you've|you'd|you'll|we're|we've|we'd|we'll|they're|they've|they'd|they'll|it's|that's|there's|here's|who's|what's|where's|when's|why's|how's|isn't|aren't|wasn't|weren't|hasn't|haven't|hadn't|doesn't|don't|didn't|won't|wouldn't|shouldn't|couldn't|can't|mustn't|needn't|ain't|y'all|gonna|wanna|gotta)\b/gi;
@@ -52,14 +53,6 @@ const TRANSITIONS = [
   "even so",
   "after all",
 ];
-
-function wordsOf(text: string): string[] {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9'\s-]/g, " ")
-    .split(/\s+/)
-    .filter(Boolean);
-}
 
 function sentencesOf(text: string): string[] {
   return text
