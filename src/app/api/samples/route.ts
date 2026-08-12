@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { writingSamples } from "@/db/schema";
-import { countWords, listSamples, rebuildStyleProfile } from "@/lib/samples";
+import {
+  countSamples,
+  countWords,
+  listSamples,
+  rebuildStyleProfile,
+} from "@/lib/samples";
 import { ensureSchema } from "@/lib/bootstrap";
 import {
   checkRateLimit,
@@ -115,8 +120,9 @@ export async function POST(request: Request) {
       content = content.slice(0, MAX_CONTENT);
     }
 
-    const existing = await listSamples();
-    if (existing.length >= MAX_SAMPLES) {
+    // COUNT(*) rather than fetching every row's content just to size it.
+    const existing = await countSamples();
+    if (existing >= MAX_SAMPLES) {
       return NextResponse.json(
         {
           error: `You can store up to ${MAX_SAMPLES} samples. Delete one before adding another.`,

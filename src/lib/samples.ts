@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { count, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import {
   styleProfiles,
@@ -19,6 +19,18 @@ export async function listSamples() {
     .select()
     .from(writingSamples)
     .orderBy(desc(writingSamples.createdAt));
+}
+
+/**
+ * Number of stored samples, without transferring their text.
+ *
+ * The quota check used to call listSamples() and read .length, which pulled
+ * every row's full `content` (up to 40 x 50 KB ~ 2 MB) across the wire on
+ * every upload just to compare a count. COUNT(*) returns one integer.
+ */
+export async function countSamples(): Promise<number> {
+  const [row] = await db.select({ value: count() }).from(writingSamples);
+  return row?.value ?? 0;
 }
 
 export async function getActiveStyleProfile(): Promise<{
