@@ -154,7 +154,6 @@ export async function POST(request: Request) {
       scan,
       detection,
       hasProfile: !!style && style.profile.sampleCount > 0,
-      aiEnabled: !!process.env.OPENAI_API_KEY,
     });
   } catch (err) {
     console.error("POST /api/scan", err);
