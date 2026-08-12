@@ -1,4 +1,5 @@
 import type { ScanSignal, ScanStyleMatch, StyleProfile } from "@/db/schema";
+import { formalityOf } from "@/lib/style-analyzer";
 
 /**
  * Shown alongside every result. This detector measures stylistic markers
@@ -431,9 +432,12 @@ export function detectAi(
       wordCount / Math.max(sentences.length, 1);
     const sentDiff = Math.abs(sents - profile.avgSentenceLength) /
       Math.max(profile.avgSentenceLength, 1);
+    // Measure the scanned text on the same 0-1 scale the profile was built
+    // with. The previous code substituted a coarse bucket derived from
+    // contraction rate (0.25 / 0.5 / 0.8), so this term partly measured the
+    // bucket boundaries rather than an actual difference in formality.
     const formDiff = Math.abs(
-      (contractionRate > 8 ? 0.25 : contractionRate > 3 ? 0.5 : 0.8) -
-        profile.formalityScore,
+      formalityOf(text, sentences.length) - profile.formalityScore,
     );
     // Both sides must be in the same unit. `fpRate` is occurrences per
     // 1,000 words; `profile.firstPersonRate` is a 0-1 fraction. The old

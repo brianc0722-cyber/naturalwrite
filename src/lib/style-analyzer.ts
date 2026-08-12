@@ -68,6 +68,22 @@ function sentencesOf(text: string): string[] {
     .filter((s) => s.length > 0);
 }
 
+/**
+ * Formality on a 0-1 scale, where 0.5 is neutral.
+ *
+ * Exported so the AI scanner can measure a scanned document on exactly the
+ * same scale as a stored style profile. Previously the scanner substituted a
+ * three-value bucket derived from contraction rate (0.25 / 0.5 / 0.8) and
+ * compared that against this continuous score, so "matches your style" was
+ * partly measuring an artefact of the bucketing rather than a real difference.
+ */
+export function formalityOf(text: string, sentenceCount: number): number {
+  const formalHits = countMatches(text, FORMAL_MARKERS);
+  const informalHits = countMatches(text, INFORMAL_MARKERS);
+  const raw = (formalHits - informalHits * 1.4) / Math.max(sentenceCount, 1);
+  return Math.min(1, Math.max(0, 0.5 + raw * 0.35));
+}
+
 function countMatches(text: string, re: RegExp): number {
   const flags = re.flags.includes("g") ? re.flags : `${re.flags}g`;
   const copy = new RegExp(re.source, flags);
@@ -124,11 +140,7 @@ export function analyzeTexts(samples: string[]): StyleProfile {
   const firstPersonRate = countMatches(combined, FIRST_PERSON) / wordCount;
   const passiveVoiceHint = countMatches(combined, PASSIVE_HINT) / sentenceCount;
 
-  const formalHits = countMatches(combined, FORMAL_MARKERS);
-  const informalHits = countMatches(combined, INFORMAL_MARKERS);
-  const formalityRaw =
-    (formalHits - informalHits * 1.4) / Math.max(sentenceCount, 1);
-  const formalityScore = Math.min(1, Math.max(0, 0.5 + formalityRaw * 0.35));
+  const formalityScore = formalityOf(combined, sentenceCount);
 
   const lower = combined.toLowerCase();
   const commonTransitions = TRANSITIONS.filter((t) => lower.includes(t)).slice(
