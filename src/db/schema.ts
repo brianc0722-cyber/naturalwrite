@@ -101,3 +101,46 @@ export const aiScans = pgTable("ai_scans", {
   aiOpinion: jsonb("ai_opinion").$type<AiOpinion>(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+export type GrammarIssueRow = {
+  rule: string;
+  category: "grammar" | "mechanics" | "style";
+  severity: "error" | "warning" | "suggestion";
+  message: string;
+  suggestion: string | null;
+  offset: number;
+  length: number;
+  excerpt: string;
+  context: string;
+};
+
+export type GrammarStatsRow = {
+  wordCount: number;
+  sentenceCount: number;
+  paragraphCount: number;
+  avgSentenceLength: number;
+  longestSentence: number;
+  readingSeconds: number;
+};
+
+export const grammarChecks = pgTable("grammar_checks", {
+  id: serial("id").primaryKey(),
+  /** Unguessable id used in URLs — see writingSamples.publicId. */
+  publicId: uuid("public_id")
+    .notNull()
+    .unique()
+    .default(sql`gen_random_uuid()`),
+  fileName: varchar("file_name", { length: 255 }).notNull().default("Pasted text"),
+  wordCount: integer("word_count").notNull().default(0),
+  score: integer("score").notNull(),
+  verdict: varchar("verdict", { length: 60 }).notNull(),
+  errorCount: integer("error_count").notNull().default(0),
+  warningCount: integer("warning_count").notNull().default(0),
+  suggestionCount: integer("suggestion_count").notNull().default(0),
+  /** Origin of the text: "paste", "upload", or "rewrite". */
+  source: varchar("source", { length: 20 }).notNull().default("paste"),
+  issues: jsonb("issues").$type<GrammarIssueRow[]>().notNull(),
+  stats: jsonb("stats").$type<GrammarStatsRow>().notNull(),
+  llmModel: varchar("llm_model", { length: 80 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});

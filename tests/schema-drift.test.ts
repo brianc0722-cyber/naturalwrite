@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -32,7 +32,13 @@ function bootstrapColumns(table: string): string[] {
     .filter((c): c is string => Boolean(c));
 }
 
-const TABLES = ["writing_samples", "style_profiles", "rewrite_jobs", "ai_scans"];
+const TABLES = [
+  "writing_samples",
+  "style_profiles",
+  "rewrite_jobs",
+  "ai_scans",
+  "grammar_checks",
+];
 
 describe("bootstrap DDL matches schema.ts", () => {
   for (const table of TABLES) {
@@ -48,6 +54,72 @@ describe("generated migrations exist", () => {
       readFileSync(join(root, "drizzle/meta/_journal.json"), "utf8"),
     ) as { entries: unknown[] };
     expect(journal.entries.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * Every journal entry needs BOTH a .sql file and a meta snapshot. A
+   * hand-written migration is easy to add without its snapshot, and drizzle
+   * then diffs against a schema that has no record of the table — so the next
+   * `generate` re-emits a CREATE TABLE that already exists.
+   */
+  it("every journal entry has a matching .sql file and snapshot", () => {
+    const journal = JSON.parse(
+      readFileSync(join(root, "drizzle/meta/_journal.json"), "utf8"),
+    ) as { entries: { idx: number; tag: string }[] };
+
+    for (const entry of journal.entries) {
+      const sqlPath = join(root, "drizzle", `${entry.tag}.sql`);
+      const snapPath = join(
+        root,
+        "drizzle/meta",
+        `${String(entry.idx).padStart(4, "0")}_snapshot.json`,
+      );
+      expect(existsSync(sqlPath), `missing ${entry.tag}.sql`).toBe(true);
+      expect(existsSync(snapPath), `missing snapshot for ${entry.tag}`).toBe(true);
+    }
+  });
+
+  it("snapshots form an unbroken prevId chain", () => {
+    const journal = JSON.parse(
+      readFileSync(join(root, "drizzle/meta/_journal.json"), "utf8"),
+    ) as { entries: { idx: number }[] };
+
+    let prev: string | null = null;
+    for (const entry of journal.entries) {
+      const snap = JSON.parse(
+        readFileSync(
+          join(
+            root,
+            "drizzle/meta",
+            `${String(entry.idx).padStart(4, "0")}_snapshot.json`,
+          ),
+          "utf8",
+        ),
+      ) as { id: string; prevId: string };
+
+      if (prev !== null) expect(snap.prevId).toBe(prev);
+      prev = snap.id;
+    }
+  });
+
+  it("the newest snapshot knows about every table", () => {
+    const journal = JSON.parse(
+      readFileSync(join(root, "drizzle/meta/_journal.json"), "utf8"),
+    ) as { entries: { idx: number }[] };
+    const last = journal.entries[journal.entries.length - 1];
+    const snap = JSON.parse(
+      readFileSync(
+        join(
+          root,
+          "drizzle/meta",
+          `${String(last.idx).padStart(4, "0")}_snapshot.json`,
+        ),
+        "utf8",
+      ),
+    ) as { tables: Record<string, unknown> };
+
+    const known = Object.keys(snap.tables).map((t) => t.replace(/^public\./, ""));
+    expect(known.sort()).toEqual([...TABLES].sort());
   });
 });
 

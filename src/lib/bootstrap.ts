@@ -72,6 +72,24 @@ export function ensureSchema(): Promise<void> {
         ALTER TABLE ai_scans
         ADD COLUMN IF NOT EXISTS ai_opinion JSONB
       `);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS grammar_checks (
+          id SERIAL PRIMARY KEY,
+          public_id UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+          file_name VARCHAR(255) NOT NULL DEFAULT 'Pasted text',
+          word_count INTEGER NOT NULL DEFAULT 0,
+          score INTEGER NOT NULL,
+          verdict VARCHAR(60) NOT NULL,
+          error_count INTEGER NOT NULL DEFAULT 0,
+          warning_count INTEGER NOT NULL DEFAULT 0,
+          suggestion_count INTEGER NOT NULL DEFAULT 0,
+          source VARCHAR(20) NOT NULL DEFAULT 'paste',
+          issues JSONB NOT NULL,
+          stats JSONB NOT NULL,
+          llm_model VARCHAR(80),
+          created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+        )
+      `);
 
       /**
        * Upgrade path for databases created before public_id existed.
