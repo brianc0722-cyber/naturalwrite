@@ -5,6 +5,7 @@ import type { StyleProfile } from "@/db/schema";
 import { contractionLabel } from "@/lib/style-analyzer";
 import { InstallButton } from "@/components/install-button";
 import { AiScanner } from "@/components/ai-scanner";
+import { GrammarChecker } from "@/components/grammar-checker";
 import { SignOutButton } from "@/components/sign-out-button";
 import {
   MAX_SAMPLE_FILE_BYTES,
@@ -87,13 +88,29 @@ export function NaturalWriteApp({
   );
   const [dragOver, setDragOver] = useState(false);
   const [previewId, setPreviewId] = useState<string | null>(null);
-  const [tab, setTab] = useState<"write" | "scan">("write");
+  const [tab, setTab] = useState<"write" | "scan" | "grammar">("write");
+  /** Text handed to the grammar tab when the user opens a rewrite there. */
+  const [grammarHandoff, setGrammarHandoff] = useState<string | null>(null);
+  /**
+   * Inline grammar summary for the current rewrite. Runs automatically after
+   * every rewrite with persist:false, so the badge never creates history rows.
+   */
+  const [outputGrammar, setOutputGrammar] = useState<{
+    score: number;
+    errors: number;
+    warnings: number;
+    suggestions: number;
+  } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   // A rewrite can take a while; abort it if the user leaves mid-request.
   const rewriteAbort = useRef<AbortController | null>(null);
+  const grammarAbort = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    return () => rewriteAbort.current?.abort();
+    return () => {
+      rewriteAbort.current?.abort();
+      grammarAbort.current?.abort();
+    };
   }, []);
 
   const profile = style?.profile ?? null;
@@ -101,6 +118,13 @@ export function NaturalWriteApp({
     () => samples.reduce((sum, s) => sum + (s.wordCount || 0), 0),
     [samples],
   );
+
+  /**
+   * Cleared once the grammar tab has picked the text up, so the same handoff
+   * is not re-applied on every later render and the user's edits there are
+   * not overwritten.
+   */
+  const handoffConsumed = useCallback(() => setGrammarHandoff(null), []);
 
   const flash = useCallback((type: "ok" | "err", text: string) => {
     setMessage({ type, text });
@@ -187,6 +211,49 @@ export function NaturalWriteApp({
     }
   }
 
+  /**
+   * Auto grammar pass on rewritten output.
+   *
+   * Fire-and-forget by design: a failure here must never surface as a rewrite
+   * error, because the rewrite itself succeeded. persist:false keeps these
+   * out of the grammar history, which is reserved for checks the user asked
+   * for. Silent on every failure path.
+   */
+  const checkOutputGrammar = useCallback(async (text: string) => {
+    if (text.trim().length < 40) {
+      setOutputGrammar(null);
+      return;
+    }
+    grammarAbort.current?.abort();
+    const ac = new AbortController();
+    grammarAbort.current = ac;
+    try {
+      const res = await fetch("/api/grammar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, persist: false, source: "rewrite" }),
+        signal: ac.signal,
+      });
+      if (!res.ok) {
+        setOutputGrammar(null);
+        return;
+      }
+      const data = await res.json();
+      const d = data.detection;
+      if (!d) return;
+      setOutputGrammar({
+        score: d.score,
+        errors: d.counts.error,
+        warnings: d.counts.warning,
+        suggestions: d.counts.suggestion,
+      });
+    } catch {
+      /* ignored: the rewrite still succeeded; the badge is an extra */
+    } finally {
+      if (grammarAbort.current === ac) grammarAbort.current = null;
+    }
+  }, []);
+
   async function onRewrite(e: React.FormEvent) {
     e.preventDefault();
     rewriteAbort.current?.abort();
@@ -194,6 +261,7 @@ export function NaturalWriteApp({
     rewriteAbort.current = ac;
     setBusy("rewrite");
     setNotes([]);
+    setOutputGrammar(null);
     try {
       const res = await fetch("/api/rewrite", {
         method: "POST",
@@ -208,6 +276,7 @@ export function NaturalWriteApp({
       }
       setOutput(data.rewritten || "");
       setNotes(Array.isArray(data.notes) ? data.notes : []);
+      void checkOutputGrammar(data.rewritten || "");
       if (!data.hasSamples) {
         flash(
           "ok",
@@ -308,6 +377,21 @@ export function NaturalWriteApp({
             <path d="m9 12 2 2 4-4" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           AI Content Scanner
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("grammar")}
+          className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+            tab === "grammar"
+              ? "bg-slate-900 text-white shadow-sm"
+              : "text-slate-600 hover:text-slate-900"
+          }`}
+        >
+          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path d="M4 19.5V6a2 2 0 0 1 2-2h12v16H6a2 2 0 0 1-2-2Z" strokeLinejoin="round" />
+            <path d="m9 11 2 2 4-4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          Grammar &amp; Mechanics
         </button>
       </div>
 
@@ -590,6 +674,28 @@ export function NaturalWriteApp({
                 <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-800">
                   {output}
                 </p>
+
+                {outputGrammar ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-emerald-100 bg-white/70 px-3 py-2">
+                    <span className="text-xs font-semibold text-slate-700">
+                      Grammar {outputGrammar.score}/100
+                    </span>
+                    <span className="text-xs text-slate-500">
+                      {outputGrammar.errors} errors · {outputGrammar.warnings}{" "}
+                      warnings · {outputGrammar.suggestions} suggestions
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGrammarHandoff(output);
+                        setTab("grammar");
+                      }}
+                      className="ml-auto rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
+                    >
+                      View details
+                    </button>
+                  </div>
+                ) : null}
                 {notes.length ? (
                   <ul className="mt-4 space-y-1.5 border-t border-emerald-100 pt-3">
                     {notes.map((n, i) => (
@@ -694,8 +800,14 @@ export function NaturalWriteApp({
           </div>
         </section>
       </div>
-      ) : (
+      ) : tab === "scan" ? (
         <AiScanner hasProfile={(profile?.sampleCount ?? 0) > 0} />
+      ) : (
+        <GrammarChecker
+          initialText={grammarHandoff}
+          initialSource={grammarHandoff ? "rewrite" : null}
+          onConsumed={handoffConsumed}
+        />
       )}
     </div>
   );
