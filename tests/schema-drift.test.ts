@@ -24,7 +24,9 @@ function schemaColumns(table: string): string[] {
 function bootstrapColumns(table: string): string[] {
   const start = bootstrap.indexOf(`CREATE TABLE IF NOT EXISTS ${table} (`);
   if (start === -1) throw new Error(`table ${table} missing from bootstrap.ts`);
-  const body = bootstrap.slice(start, bootstrap.indexOf(")\n", start));
+  const rest = bootstrap.slice(start);
+  const endRel = rest.search(/\)\r?\n/);
+  const body = endRel === -1 ? rest : rest.slice(0, endRel);
   return body
     .split("\n")
     .slice(1)
