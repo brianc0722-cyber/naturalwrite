@@ -523,7 +523,7 @@ export function GrammarChecker({
                 <p className="mt-1.5 text-xs text-slate-500">
                   {result.detection.llmModel
                     ? `Rule checks plus an AI review (${result.detection.llmModel}).`
-                    : "Rule checks only — set OPENAI_API_KEY to add an AI review that catches agreement, tense and word-choice errors."}
+                    : "Spelling and rule checks only — set OPENAI_API_KEY to add an AI review that catches agreement, tense and word-choice errors."}
                   {result.detection.llmTruncated
                     ? " The AI review saw only the first part of this document."
                     : ""}
@@ -609,9 +609,9 @@ export function GrammarChecker({
               </>
             ) : (
               <p className="mt-6 rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-900 ring-1 ring-emerald-200">
-                Nothing flagged. Remember that these are pattern rules, not a
-                full parser — a clean result means no obvious problems, not a
-                guarantee.
+                Nothing flagged. Remember that this is a spelling dictionary
+                plus pattern rules, not a full parser — a clean result means no
+                obvious problems, not a guarantee.
               </p>
             )}
 

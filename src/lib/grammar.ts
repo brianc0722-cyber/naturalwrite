@@ -154,7 +154,7 @@ function contextFor(sentences: Sentence[], offset: number): string {
  * "https://a.com/b" would otherwise trip missing-space-after-punctuation on
  * every slash and period it contains.
  */
-function protectedRanges(text: string): Array<[number, number]> {
+export function protectedRanges(text: string): Array<[number, number]> {
   const ranges: Array<[number, number]> = [];
   const patterns = [
     /https?:\/\/\S+/g,
@@ -171,7 +171,7 @@ function protectedRanges(text: string): Array<[number, number]> {
   return ranges;
 }
 
-function inProtected(ranges: Array<[number, number]>, offset: number): boolean {
+export function inProtected(ranges: Array<[number, number]>, offset: number): boolean {
   return ranges.some(([a, b]) => offset >= a && offset < b);
 }
 
@@ -326,6 +326,96 @@ const CONFUSIONS: ConfusionRule[] = [
 ];
 
 /**
+ * Contractions typed without the apostrophe.
+ *
+ * Every key here is a string that is NOT a word in its own right, so a match
+ * is unambiguous and cannot be a false alarm. Real words that merely look
+ * like a stripped contraction are deliberately absent and handled separately:
+ *
+ *   were  -> "we're" but also the past plural of "be"
+ *   well  -> "we'll" but also an adverb and a hole in the ground
+ *   ill   -> "I'll" but also unwell
+ *   id    -> "I'd" but also identification
+ *   shed / wed / hell / shell / lets / cant / wont -- all real words
+ *
+ * "cant" and "wont" ARE real words but are vanishingly rare in that sense, so
+ * they get a verb-frame rule below rather than being dropped entirely.
+ *
+ * Values keep their own capitalisation ("I'm"); a match that starts uppercase
+ * has the suggestion's first letter uppercased, never the reverse.
+ */
+const MISSING_APOSTROPHE: Record<string, string> = {
+  im: "I'm",
+  ive: "I've",
+  youre: "you're",
+  youve: "you've",
+  youd: "you'd",
+  youll: "you'll",
+  hes: "he's",
+  shes: "she's",
+  weve: "we've",
+  theyre: "they're",
+  theyve: "they've",
+  theyd: "they'd",
+  theyll: "they'll",
+  itll: "it'll",
+  thats: "that's",
+  theres: "there's",
+  wheres: "where's",
+  whats: "what's",
+  whos: "who's",
+  wholl: "who'll",
+  hows: "how's",
+  heres: "here's",
+  dont: "don't",
+  doesnt: "doesn't",
+  didnt: "didn't",
+  isnt: "isn't",
+  arent: "aren't",
+  wasnt: "wasn't",
+  werent: "weren't",
+  havent: "haven't",
+  hasnt: "hasn't",
+  hadnt: "hadn't",
+  couldnt: "couldn't",
+  shouldnt: "shouldn't",
+  wouldnt: "wouldn't",
+  mustnt: "mustn't",
+  couldve: "could've",
+  shouldve: "should've",
+  wouldve: "would've",
+  oclock: "o'clock",
+};
+
+const MISSING_APOSTROPHE_RE = new RegExp(
+  `\\b(${Object.keys(MISSING_APOSTROPHE).join("|")})\\b`,
+  "gi",
+);
+
+/**
+ * Verbs and adverbs that can follow "can't" / "won't". The bare spellings
+ * "cant" (insincere talk) and "wont" (habit) are nouns, so they are never
+ * followed by one of these -- the frame makes the match safe.
+ */
+const NEGATED_VERB =
+  "(?:be|do|get|go|see|say|make|take|help|wait|find|tell|give|come|know|think|believe|afford|stand|stop|start|remember|forget|understand|imagine|explain|change|keep|let|run|open|close|read|write|use|work|hear|talk|speak|move|leave|stay|handle|manage|happen|matter|last|fit|allow|accept|return|need|want|seem|even|just|ever|really|always|possibly|otherwise)";
+
+/**
+ * A repeated word with one word between it: "what it is it you would like".
+ *
+ * The plain doubled-word rule only sees adjacent repeats. This catches the
+ * transposition class, but ONLY in a pronoun + auxiliary frame. A general
+ * "X Y X" search would drown in idiom -- "hand in hand", "day by day",
+ * "face to face", "step by step", "back to back", "over and over".
+ *
+ * "that" is excluded on purpose: "and that is that" is a real sentence.
+ */
+const PRONOUN_ECHO = /\b(it|he|she|they|we|you)\s+(is|are|was|were|has|have|had|will|would|can|could|does|did)\s+\1\b/gi;
+
+/** The same transposition the other way round: "is it is". */
+const AUX_ECHO = /\b(is|are|was|were|has|have|had)\s+(it|he|she|they|we|you)\s+\1\b/gi;
+
+/**
  * Words that begin with a vowel letter but a consonant SOUND, and vice versa.
  * The a/an rule is spelling-based and therefore wrong on exactly these.
  */
@@ -342,7 +432,7 @@ const VOWEL_SOUND = /^(?:hour|honest|honor|honour|heir|herb\b|x-ray|mba|md\b|fbi
 const ARTICLE_SKIP_WORDS = /^(?:alot|alright|abit)$/i;
 
 /** A rule may push zero or more issues; helper keeps construction uniform. */
-function issue(
+export function issue(
   base: Omit<GrammarIssue, "context" | "excerpt">,
   text: string,
   sentences: Sentence[],
@@ -385,6 +475,66 @@ export function checkGrammar(text: string): GrammarResult {
       offset: m.index,
       length: m[0].length,
     });
+  }
+
+  // Contractions typed without the apostrophe: "Im", "dont", "youre".
+  for (const m of text.matchAll(MISSING_APOSTROPHE_RE)) {
+    const raw = m[1];
+    // ALL-CAPS runs are acronyms and initialisms, not contractions: "IM",
+    // "ID", "IVE". A single capital ("Im") is ordinary sentence case.
+    if (raw.length > 1 && raw === raw.toUpperCase()) continue;
+    const canonical = MISSING_APOSTROPHE[raw.toLowerCase()];
+    // Preserve the writer's capitalisation: "Dont" -> "Don't", not "don't".
+    const suggestion =
+      raw[0] === raw[0].toUpperCase()
+        ? canonical[0].toUpperCase() + canonical.slice(1)
+        : canonical;
+    add({
+      rule: "missing-apostrophe",
+      category: "mechanics",
+      severity: "error",
+      message: `"${raw}" is missing an apostrophe.`,
+      suggestion,
+      offset: m.index,
+      length: raw.length,
+    });
+  }
+
+  // "cant" / "wont" are real words, so they need a verb frame to be safe.
+  for (const m of text.matchAll(
+    new RegExp(`\\b(cant|wont)\\s+(${NEGATED_VERB})\\b`, "gi"),
+  )) {
+    const raw = m[1];
+    if (raw === raw.toUpperCase()) continue;
+    const canonical = raw.toLowerCase() === "cant" ? "can't" : "won't";
+    const suggestion =
+      raw[0] === raw[0].toUpperCase()
+        ? canonical[0].toUpperCase() + canonical.slice(1)
+        : canonical;
+    add({
+      rule: "missing-apostrophe",
+      category: "mechanics",
+      severity: "error",
+      message: `"${raw}" is missing an apostrophe.`,
+      suggestion,
+      offset: m.index,
+      length: raw.length,
+    });
+  }
+
+  // Transposed repeats: "what it is it you would like".
+  for (const re of [PRONOUN_ECHO, AUX_ECHO]) {
+    for (const m of text.matchAll(re)) {
+      add({
+        rule: "repeated-word",
+        category: "grammar",
+        severity: "error",
+        message: `"${m[1]}" is repeated \u2014 this reads as a typo or a transposition.`,
+        suggestion: `${m[1]} ${m[2]}`,
+        offset: m.index,
+        length: m[0].length,
+      });
+    }
   }
 
   // Space before punctuation: "word ,"
@@ -582,6 +732,129 @@ export function checkGrammar(text: string): GrammarResult {
     });
   }
 
+  // Agreement attraction: a singular head noun followed by a prepositional
+  // phrase, where the plural object of the preposition pulls the verb into
+  // the plural. "The list of items are ..." should be "is".
+  //
+  // This is the most common agreement error in English, and the existing
+  // pronoun rules above cannot see it because the subject is a noun.
+  //
+  // Kept deliberately narrow, in the house style of "the more specific rule
+  // owns the span":
+  //   - The head noun must come from a closed list of nouns that are
+  //     genuinely singular. Quantifiers ("a number of", "a lot of",
+  //     "the rest of", "some of", "half of") take a plural verb and are
+  //     excluded by simply never appearing on the list.
+  //   - The determiner must be singular ("the", "this", "each", "a"), which
+  //     rules out "these kinds of results are".
+  //   - The object of the preposition must be immediately followed by the
+  //     verb. That gap requirement is what keeps the rule quiet on relative
+  //     clauses like "the set of rules that govern trades are complex",
+  //     where the plural verb is correct.
+  const SINGULAR_HEADS =
+    "list|set|box|bag|collection|array|version|copy|type|kind|sort|piece|" +
+    "member|owner|author|purpose|cost|price|value|size|name|status|quality|" +
+    "level|impact|effect|benefit|risk|goal|focus|role|source|cause|reason|" +
+    "nature|extent|degree|point|idea|summary|description|title|index|length|" +
+    "width|height|weight|speed|rate|ratio|sum|average|meaning|definition|" +
+    "location|position|sequence|structure|design|layout|format|style|tone|" +
+    "combination|series|result|outcome|scope|intent";
+  const attraction = new RegExp(
+    String.raw`\b(the|this|that|each|every|a|an)\s+(${SINGULAR_HEADS})\s+of\s+` +
+      String.raw`(?:the\s+|these\s+|those\s+|our\s+|your\s+|their\s+|its\s+|his\s+|her\s+|all\s+)?` +
+      String.raw`([A-Za-z]+s)\s+(are|were|have|do|don't|dont)\b`,
+    "gi",
+  );
+  for (const m of text.matchAll(attraction)) {
+    const fixes: Record<string, string> = {
+      are: "is",
+      were: "was",
+      have: "has",
+      do: "does",
+      "don't": "doesn't",
+      dont: "doesn't",
+    };
+    const verb = m[4].toLowerCase();
+    const fixed = fixes[verb];
+    if (!fixed) continue;
+    add({
+      rule: "subject-verb-attraction",
+      category: "grammar",
+      severity: "error",
+      message:
+        `The subject is "${m[1]} ${m[2]}", which is singular, so it takes ` +
+        `"${fixed}". The plural "${m[3]}" belongs to "of", not to the verb.`,
+      suggestion: `${m[3]} ${fixed}`,
+      offset: m.index,
+      length: m[0].length,
+    });
+  }
+
+  // Past tense used where a past participle is required: "I have went",
+  // "he has drank". The auxiliary have/has/had/having forces the participle,
+  // and these irregular verbs are the ones people actually get wrong.
+  //
+  // Only verbs whose past tense and participle genuinely differ are listed,
+  // so "have run", "have come" and "have put" never match. Regular verbs are
+  // excluded entirely because their two forms are identical.
+  const PARTICIPLES: Record<string, string> = {
+    went: "gone", drank: "drunk", ate: "eaten", saw: "seen", began: "begun",
+    sang: "sung", swam: "swum", took: "taken", gave: "given", wrote: "written",
+    broke: "broken", chose: "chosen", drove: "driven", fell: "fallen",
+    forgot: "forgotten", froze: "frozen", grew: "grown", knew: "known",
+    rode: "ridden", spoke: "spoken", stole: "stolen", threw: "thrown",
+    wore: "worn", tore: "torn", flew: "flown", blew: "blown",
+    shook: "shaken", rang: "rung", sank: "sunk", ran: "run",
+  };
+  // "have saw blades", "have saw dust": here "saw" is a noun being modified,
+  // not a verb. The same trap does not exist for the other entries.
+  const SAW_AS_NOUN = /^\s*(?:blades?|dust|mills?|horses?|teeth|tooth|marks?|cuts?)\b/i;
+  const participleRe = new RegExp(
+    String.raw`\b(have|has|had|having)\s+(${Object.keys(PARTICIPLES).join("|")})\b`,
+    "gi",
+  );
+  for (const m of text.matchAll(participleRe)) {
+    const past = m[2].toLowerCase();
+    if (past === "saw" && SAW_AS_NOUN.test(text.slice(m.index + m[0].length))) {
+      continue;
+    }
+    const correct = PARTICIPLES[past];
+    add({
+      rule: "past-participle",
+      category: "grammar",
+      severity: "error",
+      message: `After "${m[1].toLowerCase()}", use the past participle "${correct}", not "${past}".`,
+      suggestion: `${m[1]} ${correct}`,
+      offset: m.index,
+      length: m[0].length,
+    });
+  }
+
+  // "Each of the students have a laptop." These quantifiers are singular:
+  // the plural noun belongs to "of", exactly like the attraction case above.
+  // "both of", "all of", "some of", "many of" are plural and are excluded by
+  // simply never appearing in this list.
+  const singularQuantifier =
+    /\b(each|one|neither|either)\s+of\s+(?:the|these|those|our|your|their|its|his|her|my)\s+([A-Za-z]+s)\s+(are|were|have|do|don't|dont)\b/gi;
+  for (const m of text.matchAll(singularQuantifier)) {
+    const fixes: Record<string, string> = {
+      are: "is", were: "was", have: "has", do: "does",
+      "don't": "doesn't", dont: "doesn't",
+    };
+    const verb = m[3].toLowerCase();
+    const fixed = fixes[verb];
+    if (!fixed) continue;
+    add({
+      rule: "quantifier-agreement",
+      category: "grammar",
+      severity: "error",
+      message: `"${m[1].toLowerCase()}" is singular, so it takes "${fixed}". The plural "${m[2]}" belongs to "of".`,
+      suggestion: `${m[2]} ${fixed}`,
+      offset: m.index,
+      length: m[0].length,
+    });
+  }
+
   // Sentence capitalization.
   for (const s of sentences) {
     const first = s.text.match(/^["'“‘(\[]*([\p{L}])/u);
@@ -768,4 +1041,4 @@ export function verdictOf(score: number): string {
 }
 
 export const GRAMMAR_DISCLAIMER =
-  "This checker uses pattern rules, not a full parser. It is tuned to avoid false alarms, so it will miss subtle errors — a clean score means nothing obvious was found, not that the writing is perfect.";
+  "This checker combines a spelling dictionary with pattern rules, not a full parser. It is tuned to avoid false alarms, so it stays quiet on names and unusual capitalisation and will miss subtle grammar errors — a clean score means nothing obvious was found, not that the writing is perfect.";

@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { grammarChecks } from "@/db/schema";
 import { ensureSchema } from "@/lib/bootstrap";
 import { checkGrammar, scoreOf, verdictOf } from "@/lib/grammar";
+import { checkSpelling } from "@/lib/spellcheck";
 import { getLlmGrammarReview, mergeIssues } from "@/lib/llm-grammar";
 import { ExtractError, extractTextFromBuffer } from "@/lib/text-extract";
 import { isLatinScript } from "@/lib/tokenize";
@@ -151,12 +152,20 @@ export async function POST(request: Request) {
       );
     }
 
+    // Spelling runs after the Latin-script gate: the dictionaries are English
+    // and would flag every word of a Cyrillic document. A dictionary that
+    // fails to load returns nothing rather than failing the whole check.
+    const spelling = await checkSpelling(text);
+    const ruleIssues = [...result.issues, ...spelling].sort(
+      (a, b) => a.offset - b.offset,
+    );
+
     // Optional depth. Null when no key is configured, and the UI reports
     // which mode ran rather than silently degrading.
     const review = await getLlmGrammarReview(text);
     const issues = review
-      ? mergeIssues(result.issues, review.issues)
-      : result.issues;
+      ? mergeIssues(ruleIssues, review.issues)
+      : ruleIssues;
 
     const counts = {
       error: issues.filter((i) => i.severity === "error").length,
