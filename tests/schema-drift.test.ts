@@ -50,3 +50,66 @@ describe("generated migrations exist", () => {
     expect(journal.entries.length).toBeGreaterThan(0);
   });
 });
+
+describe("public_id index guard", () => {
+  /**
+   * Regression: the backfill loop used to run
+   * `CREATE UNIQUE INDEX IF NOT EXISTS <table>_public_id_key`. IF NOT EXISTS
+   * only matches the literal NAME, but drizzle's migrations name the same
+   * constraint `<table>_public_id_unique` — so a drizzle-provisioned database
+   * gained a second, redundant unique index on public_id. The guard must
+   * inspect pg_index for a unique index on the COLUMN instead.
+   */
+  it("checks for an existing unique index by shape, not by name", () => {
+    expect(bootstrap).toMatch(/from\s+pg_index/i);
+    expect(bootstrap).toMatch(/indisunique/);
+    expect(bootstrap).toMatch(/attname\s*=\s*'public_id'/);
+  });
+
+  it("performs the pg_index lookup before creating the index", () => {
+    // Order matters: the shape lookup has to run first and gate the CREATE.
+    const lookup = bootstrap.indexOf("indisunique");
+    const create = bootstrap.indexOf("CREATE UNIQUE INDEX");
+    expect(lookup).toBeGreaterThan(-1);
+    expect(create).toBeGreaterThan(-1);
+    expect(lookup).toBeLessThan(create);
+  });
+
+  /**
+   * The cleanup drops duplicates left behind by the old name-based guard.
+   * Two properties must hold or it is worse than the bug it fixes:
+   *   1. it must never drop a constraint-backed index (DROP INDEX errors out,
+   *      and dropping the constraint would remove the real guarantee), and
+   *   2. it must never drop the LAST unique index, which would silently end
+   *      uniqueness enforcement on public_id.
+   */
+  it("only cleans up when more than one unique index exists", () => {
+    expect(bootstrap).toMatch(/existing\.rows\.length\s*>\s*1/);
+  });
+
+  it("keeps the first row and drops only the remainder", () => {
+    expect(bootstrap).toMatch(/existing\.rows\.slice\(1\)/);
+  });
+
+  it("skips constraint-backed indexes when dropping", () => {
+    expect(bootstrap).toMatch(/constraint_backed/);
+    expect(bootstrap).toMatch(/if\s*\(\s*dupe\.constraint_backed\s*\)\s*continue/);
+  });
+
+  it("orders constraint-backed indexes first so they are the survivor", () => {
+    expect(bootstrap).toMatch(/ORDER BY constraint_backed DESC/);
+  });
+
+  it("excludes the primary key from the duplicate scan", () => {
+    // Without NOT indisprimary the PK would count as a duplicate on tables
+    // where public_id happened to be the first indexed column.
+    expect(bootstrap).toMatch(/NOT i\.indisprimary/);
+  });
+
+  it("cannot use bind parameters inside a DO block", () => {
+    // A DO body is a single string literal; parameters there fail at runtime
+    // with "bind message supplies N parameters, but prepared statement
+    // requires 0". Keep the guard as a plain parameterized SELECT.
+    expect(bootstrap).not.toMatch(/DO\s+\$\$/);
+  });
+});
