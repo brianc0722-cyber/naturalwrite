@@ -1,0 +1,15 @@
+# Normalise line endings in the repository.
+#
+# Without this, a Windows clone gets CRLF in the working tree while CI on
+# Linux gets LF. Any test that parses source files as text then behaves
+# differently on the two platforms -- which is exactly what happened to
+# tests/schema-drift.test.ts, where a `")\n"` terminator failed to match
+# `")\r\n"` and swallowed the rest of the file.
+#
+# `text=auto` stores everything as LF in git and leaves checkout behaviour to
+# core.autocrlf, so this does not force anyone's editor to change.
+* text=auto
+
+# Patch files must keep LF or `git am` can reject them.
+*.patch -text
+*.diff -text

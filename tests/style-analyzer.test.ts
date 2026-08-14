@@ -120,3 +120,72 @@ describe("analyzeTexts", () => {
     expect(formal.formalityScore).toBeGreaterThan(casual.formalityScore);
   });
 });
+
+/**
+ * B2: uploading samples must never make the rewriter do LESS lexical work than
+ * it does for a user with no samples at all.
+ *
+ * The balanced formality band (0.45–0.62) used to be a no-op that only pushed
+ * a note. Because formalityOf() centres on 0.5, that band is where ordinary
+ * prose lands — so the regression hit the common case, not an edge case.
+ */
+const BALANCED: StyleProfile = { ...FORMAL, formalityScore: 0.5 };
+
+describe("rewriteToStyle — balanced register is not a no-op (B2)", () => {
+  const BLOATED =
+    "We must utilize every resource prior to commencing, due to the fact that it is important to note that time is short.";
+
+  it("de-bloats text for a balanced profile", () => {
+    const out = rewriteToStyle(BLOATED, BALANCED).rewritten;
+    expect(out).toMatch(/\buse\b/);
+    expect(out).toMatch(/\bbefore\b/);
+    expect(out).toMatch(/\bbecause\b/);
+    expect(out).not.toMatch(/utilize|prior to|due to the fact that/);
+  });
+
+  it("does at least as much lexical work as having no profile at all", () => {
+    // The core promise: more information about the user cannot mean less help.
+    const balanced = rewriteToStyle(BLOATED, BALANCED).rewritten;
+    const noProfile = rewriteToStyle(BLOATED, null).rewritten;
+    expect(balanced.length).toBeLessThanOrEqual(noProfile.length);
+  });
+
+  it("does not push a balanced profile toward the casual pole", () => {
+    // Register-carrying swaps must not fire here — that is what keeps this
+    // branch "balanced" rather than a quiet casual shift. Caught a real bug:
+    // the first cut reused FORMAL_TO_CASUAL.slice(0, 12), which contains
+    // "however" -> "but" and rewrote formal-but-correct prose.
+    for (const [input, word] of [
+      ["However, the result was clear.", /However/i],
+      ["Therefore, we proceeded.", /Therefore/i],
+      ["The value was subsequently revised.", /subsequently/i],
+      ["It took approximately 40 minutes.", /approximately/i],
+    ] as Array<[string, RegExp]>) {
+      expect(rewriteToStyle(input, BALANCED).rewritten).toMatch(word);
+    }
+  });
+
+  it("de-bloats without shifting register for the no-profile path too", () => {
+    // Both paths share NEUTRAL_DEBLOAT, so neither may carry register.
+    const out = rewriteToStyle("However, we utilize it prior to launch.", null).rewritten;
+    expect(out).toMatch(/However/i);
+    expect(out).toMatch(/\buse\b/);
+    expect(out).toMatch(/\bbefore\b/);
+  });
+
+  it("still reports a balanced register in its note", () => {
+    const { notes } = rewriteToStyle(BLOATED, BALANCED);
+    expect(notes.join(" ")).toMatch(/balanced register/i);
+  });
+
+  it("reports the honest note when there was no bloat to trim", () => {
+    const { notes } = rewriteToStyle("The cat sat on the mat.", BALANCED);
+    expect(notes.join(" ")).toContain("Kept a balanced register matching your samples");
+  });
+
+  it("leaves the casual and formal branches unchanged", () => {
+    expect(rewriteToStyle("I utilize this daily.", CASUAL).rewritten).toMatch(/\buse\b/);
+    const formalOut = rewriteToStyle("However, we use it.", FORMAL).rewritten;
+    expect(formalOut).not.toMatch(/\butilize\b.*\butilize\b/);
+  });
+});

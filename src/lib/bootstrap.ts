@@ -72,6 +72,24 @@ export function ensureSchema(): Promise<void> {
         ALTER TABLE ai_scans
         ADD COLUMN IF NOT EXISTS ai_opinion JSONB
       `);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS grammar_checks (
+          id SERIAL PRIMARY KEY,
+          public_id UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+          file_name VARCHAR(255) NOT NULL DEFAULT 'Pasted text',
+          word_count INTEGER NOT NULL DEFAULT 0,
+          score INTEGER NOT NULL,
+          verdict VARCHAR(60) NOT NULL,
+          error_count INTEGER NOT NULL DEFAULT 0,
+          warning_count INTEGER NOT NULL DEFAULT 0,
+          suggestion_count INTEGER NOT NULL DEFAULT 0,
+          source VARCHAR(20) NOT NULL DEFAULT 'paste',
+          issues JSONB NOT NULL,
+          stats JSONB NOT NULL,
+          llm_model VARCHAR(80),
+          created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+        )
+      `);
 
       /**
        * Upgrade path for databases created before public_id existed.
@@ -93,11 +111,77 @@ export function ensureSchema(): Promise<void> {
           sql`ALTER TABLE ${sql.identifier(table)}
               ALTER COLUMN public_id SET NOT NULL`,
         );
-        await db.execute(
-          sql`CREATE UNIQUE INDEX IF NOT EXISTS ${sql.identifier(
-            `${table}_public_id_key`,
-          )} ON ${sql.identifier(table)} (public_id)`,
+        /**
+         * Guard on the SHAPE of the index, not its name. `IF NOT EXISTS` only
+         * matches the literal name, and the two supported provisioning paths
+         * name this differently: drizzle's migrations create
+         * `<table>_public_id_unique`, while the inline UNIQUE above gets
+         * Postgres's default `<table>_public_id_key`. Keying off the name
+         * meant a drizzle-migrated database got a SECOND, redundant unique
+         * index on the same column — double the write cost, forever.
+         *
+         * Done as a SELECT + conditional CREATE rather than a DO block: a DO
+         * body is one string literal, so it cannot take bind parameters.
+         */
+        const existing = await db.execute<{
+          index_name: string;
+          constraint_backed: boolean;
+        }>(
+          sql`SELECT ic.relname AS index_name,
+                     (con.oid IS NOT NULL) AS constraint_backed
+              FROM pg_index i
+              JOIN pg_class t ON t.oid = i.indrelid
+              JOIN pg_class ic ON ic.oid = i.indexrelid
+              JOIN pg_attribute a
+                ON a.attrelid = t.oid
+               AND a.attnum = i.indkey[0]
+              LEFT JOIN pg_constraint con ON con.conindid = i.indexrelid
+              WHERE t.relname = ${table}
+                AND t.relnamespace = 'public'::regnamespace
+                AND i.indisunique
+                AND NOT i.indisprimary
+                AND i.indnatts = 1
+                AND a.attname = 'public_id'
+              ORDER BY constraint_backed DESC, ic.relname`,
         );
+
+        if (existing.rows.length === 0) {
+          await db.execute(
+            sql`CREATE UNIQUE INDEX IF NOT EXISTS ${sql.identifier(
+              `${table}_public_id_key`,
+            )} ON ${sql.identifier(table)} (public_id)`,
+          );
+        } else if (existing.rows.length > 1) {
+          /**
+           * One-time cleanup for databases provisioned before the guard above
+           * checked index SHAPE instead of index NAME. Those databases were
+           * migrated by drizzle (creating `<table>_public_id_unique`) and then
+           * booted by the old bootstrap, whose
+           * `CREATE UNIQUE INDEX IF NOT EXISTS <table>_public_id_key` could not
+           * see the differently-named index and built a second one. Two
+           * identical unique indexes on one column means every insert maintains
+           * both, forever.
+           *
+           * Keep the constraint-backed index and drop the plain duplicates:
+           * DROP INDEX refuses to touch an index owned by a constraint
+           * ("cannot drop index ... because constraint ... requires it"), so
+           * dropping the plain one is both the safe and the only direct option.
+           * The ORDER BY puts constraint-backed first, so slice(1) is always
+           * the droppable remainder. Uniqueness is never lost: the survivor is
+           * enforcing it throughout.
+           */
+          const keep = existing.rows[0];
+          for (const dupe of existing.rows.slice(1)) {
+            if (dupe.constraint_backed) continue; // never orphan a constraint
+            await db.execute(
+              sql`DROP INDEX IF EXISTS ${sql.identifier(dupe.index_name)}`,
+            );
+            console.info(
+              `ensureSchema: dropped redundant unique index ${dupe.index_name} ` +
+                `on ${table} (kept ${keep.index_name})`,
+            );
+          }
+        }
       }
     })().catch((err) => {
       ready = null; // allow retry on the next request

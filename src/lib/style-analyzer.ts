@@ -275,6 +275,46 @@ const FORMAL_TO_CASUAL: Array<[RegExp, string]> = [
  *   help -> assist         breaks "can't help it"
  *   about -> regarding     breaks "about to", "walked about"
  */
+/**
+ * Register-NEUTRAL de-bloating: verbose constructions whose plain equivalent is
+ * standard in every register, formal writing included.
+ *
+ * The membership rule is deliberately strict, because this list is the only
+ * lexical work done for a writer whose register we intend to leave alone: a
+ * pair belongs here only if no style guide would defend the longer form. Nobody
+ * argues for "due to the fact that" over "because", or "utilize" over "use".
+ *
+ * Pairs excluded on purpose, despite living in FORMAL_TO_CASUAL:
+ *   - "however" -> "but", "therefore" -> "so", "subsequently" -> "then".
+ *     These are perfectly at home in formal prose; swapping them is a register
+ *     shift, not a simplification.
+ *   - "approximately" -> "about", "robust" -> "strong", "seamless" -> "smooth".
+ *     Each has a legitimate precise use (scientific, statistical, technical)
+ *     that the plain form does not cover.
+ *
+ * Kept as its own named list rather than FORMAL_TO_CASUAL.slice(0, n): a
+ * positional slice encodes "conservative" as an array index, so reordering or
+ * inserting a pair silently changes which rules fire, with nothing to catch it.
+ */
+const NEUTRAL_DEBLOAT: Array<[RegExp, string]> = [
+  [/\bin order to\b/gi, "to"],
+  [/\bdue to the fact that\b/gi, "because"],
+  [/\bat this point in time\b/gi, "now"],
+  [/\bin the event that\b/gi, "if"],
+  [/\bit is important to note that\s*/gi, ""],
+  [/\bit should be noted that\s*/gi, ""],
+  [/\bprior to\b/gi, "before"],
+  [/\butilize\b/gi, "use"],
+  [/\bcommence\b/gi, "start"],
+  [/\bassist\b/gi, "help"],
+  [/\bfacilitate\b/gi, "help"],
+  [/\bleverage\b/gi, "use"],
+  [/\bsynergy\b/gi, "teamwork"],
+  [/\bparadigm\b/gi, "model"],
+  [/\bcutting-edge\b/gi, "modern"],
+  [/\bstate-of-the-art\b/gi, "advanced"],
+];
+
 const CASUAL_TO_FORMAL: Array<[RegExp, string]> = [
   [/\ba lot of\b/gi, "many"],
   [/\bkinda\b/gi, "somewhat"],
@@ -586,7 +626,13 @@ function rewriteOne(
     notes.push(
       "No writing samples yet — used general naturalization. Upload samples for a closer match to your voice.",
     );
-    text = applyPairs(text, FORMAL_TO_CASUAL.slice(0, 12));
+    /**
+     * With no samples we have no register to match, so we only do work that is
+     * safe in every register. Previously FORMAL_TO_CASUAL.slice(0, 12), which
+     * expressed "the conservative ones" as an array index — reordering the
+     * table silently changed behaviour here. NEUTRAL_DEBLOAT names them.
+     */
+    text = applyPairs(text, NEUTRAL_DEBLOAT);
     return { text: tidy(text), notes };
   }
 
@@ -597,7 +643,34 @@ function rewriteOne(
     text = applyPairs(text, CASUAL_TO_FORMAL);
     notes.push("Shifted wording toward your more formal register");
   } else {
-    notes.push("Kept a balanced register matching your samples");
+    /**
+     * Balanced register: don't push the text toward either pole, but still do
+     * the register-NEUTRAL work.
+     *
+     * This branch used to be a pure no-op that reported "Kept a balanced
+     * register". That inverted the product promise: with no samples at all the
+     * rewriter applies FORMAL_TO_CASUAL.slice(0, 12), so uploading samples that
+     * landed here made the rewriter do LESS than it does for a brand-new user,
+     * while the note implied a deliberate choice.
+     *
+     * The band is not a rare edge case either. formalityOf() centres on 0.5 for
+     * text with no net formal markers, so ordinary prose — business writing,
+     * plain reportage — sits squarely in it; only unusually marker-dense text
+     * clears 0.62. This was the common path, not a corner.
+     *
+     * NEUTRAL_DEBLOAT is the register-safe subset: verbose constructions with a
+     * plain equivalent that formal prose accepts too ("utilize" -> "use",
+     * "prior to" -> "before"). Removing bloat is not a register shift, so it is
+     * legitimate work to do for a writer we have decided not to move.
+     * Register-carrying swaps like "however" -> "but" are excluded by name.
+     */
+    const tightened = applyPairs(text, NEUTRAL_DEBLOAT);
+    if (tightened !== text) {
+      text = tightened;
+      notes.push("Kept your balanced register, trimmed wordy phrasing");
+    } else {
+      notes.push("Kept a balanced register matching your samples");
+    }
   }
 
   if (profile.contractionRate >= CONTRACTION_FREQUENT) {
