@@ -23,9 +23,10 @@ export default function AiToolkit() {
     <div ref={rootRef} className={"nw-root" + (open ? " open" : "")}>
       <style>{`
         .nw-root, .nw-root * { box-sizing: border-box; margin: 0; padding: 0; }
-        .nw-root { position: fixed; top: 16px; right: 16px; z-index: 99999; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
-        .nw-btn { display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid #d1fae5; border-radius: 999px; padding: 9px 16px; font-size: 13px; font-weight: 700; color: #065f46; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.08); }
+        .nw-root { position: fixed; top: 24px; right: 32px; z-index: 99999; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+        .nw-btn { display: flex; align-items: center; gap: 10px; background: #fff; border: 1px solid #d1fae5; border-radius: 999px; padding: 11px 18px; font-size: 13px; font-weight: 700; color: #065f46; cursor: pointer; box-shadow: 0 8px 22px rgba(6, 95, 70, .10); }
         .nw-btn:hover { background: #ecfdf5; }
+        @media (max-width: 640px) { .nw-root { top: 16px; right: 16px; } }
         .nw-chevron { transition: transform .2s; }
         .nw-root.open .nw-chevron { transform: rotate(180deg); }
         .nw-panel { display: none; position: absolute; right: 0; top: calc(100% + 8px); width: 292px; background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; box-shadow: 0 12px 32px rgba(0,0,0,.14); overflow: hidden; }

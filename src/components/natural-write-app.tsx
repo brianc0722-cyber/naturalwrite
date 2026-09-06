@@ -310,37 +310,37 @@ export function NaturalWriteApp({
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
-      <header className="mb-10 flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-emerald-700/15 bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-800">
+      <header className="mb-12 grid gap-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start lg:gap-12">
+        <div className="max-w-3xl">
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-emerald-700/15 bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-800">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
             NaturalWrite
           </div>
-          <h1 className="text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
+          <h1 className="text-balance text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
             Write like you — not like a model
           </h1>
-          <p className="mt-3 max-w-2xl text-base leading-relaxed text-slate-600">
+          <p className="mt-4 max-w-2xl text-pretty text-base leading-7 text-slate-600 sm:text-lg sm:leading-8">
             Upload writing samples so NaturalWrite can learn your voice, rhythm,
             and habits. Then rewrite any draft in a style that sounds like you.
           </p>
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-3">
+        <div className="flex w-full shrink-0 flex-col gap-5 lg:w-auto lg:min-w-[296px] lg:items-end lg:pt-16">
           {authEnabled ? <SignOutButton /> : null}
           <InstallButton />
-          <div className="flex gap-3">
-            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <div className="grid w-full grid-cols-2 gap-4 lg:w-auto">
+            <div className="min-w-0 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm lg:min-w-[120px]">
               <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500">
                 Samples
               </p>
-              <p className="text-2xl font-semibold text-slate-900">
+              <p className="mt-1 text-2xl font-semibold text-slate-900">
                 {samples.length}
               </p>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+            <div className="min-w-0 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm lg:min-w-[172px]">
               <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500">
                 Words learned
               </p>
-              <p className="text-2xl font-semibold text-slate-900">
+              <p className="mt-1 text-2xl font-semibold text-slate-900">
                 {totalWords.toLocaleString()}
               </p>
             </div>
