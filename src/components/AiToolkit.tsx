@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 
 /** PromptForge's live address. Leave empty to show "Coming soon" instead. */
-const PROMPTFORGE_URL = "https://www.promptforge.com/";
+const PROMPTFORGE_URL = "https://promptforge-omega-navy.vercel.app";
 
 const SUMMA_URL = "https://www.contentsummarize.com/";
 
