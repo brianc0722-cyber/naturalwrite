@@ -578,28 +578,10 @@ export function NaturalWriteApp({
                     className="flex gap-2 text-sm text-emerald-50/90"
                   >
                     <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
-                    <span className="capitalize">{note}</span>
+                    <span className="block first-letter:uppercase">{note}</span>
                   </li>
                 ))}
               </ul>
-            ) : null}
-
-            {profile?.signaturePhrases?.length ? (
-              <div className="mt-5">
-                <p className="text-[11px] font-medium uppercase tracking-[0.1em] text-emerald-200/70">
-                  Signature phrases
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {profile.signaturePhrases.slice(0, 6).map((p, i) => (
-                    <span
-                      key={`${i}-${p}`}
-                      className="rounded-full border border-white/10 bg-white/10 px-2.5 py-1 text-xs text-emerald-50"
-                    >
-                      {p}
-                    </span>
-                  ))}
-                </div>
-              </div>
             ) : null}
           </div>
         </section>

@@ -83,6 +83,48 @@ function countMatches(text: string, re: RegExp): number {
   return (text.match(copy) ?? []).length;
 }
 
+/**
+ * Function words that carry no personal signature. A phrase made only of
+ * these ("in the", "and the") is how English works, not how *this* writer
+ * works, so it is never reported as a signature phrase.
+ */
+const PHRASE_STOPWORDS = new Set([
+  "the", "a", "an", "and", "or", "but", "of", "to", "in", "on", "at", "for",
+  "with", "by", "from", "as", "is", "are", "was", "were", "be", "been", "being",
+  "it", "its", "this", "that", "these", "those", "i", "you", "he", "she", "we",
+  "they", "my", "your", "our", "their", "his", "her", "me", "us", "them", "so",
+  "if", "then", "than", "not", "no", "do", "did", "does", "has", "have", "had",
+  "will", "would", "can", "could", "should", "may", "might", "also", "just",
+  "very", "there", "here", "up", "out", "about", "into", "over", "which", "who",
+  "what", "when", "where", "how", "all", "any", "some", "more", "most", "other",
+  "such", "only", "own", "same", "too", "s", "t", "re", "ve", "ll", "d", "m",
+]);
+
+/**
+ * PDF and DOCX headings are often letter-spaced ("Y E A R S 2 0 1 5") and
+ * extract as runs of single-character "words". Left alone, those runs become
+ * the most frequent n-grams in the corpus and surface as signature phrases
+ * like "e a r". Join any run of four or more single letters back into a word.
+ */
+export function collapseSpacedLetters(text: string): string {
+  return text.replace(/\b(?:\p{L}[ \t]){3,}\p{L}\b/gu, (run) =>
+    run.replace(/[ \t]/g, ""),
+  );
+}
+
+/**
+ * Whether an n-gram is worth showing as a writer's signature phrase.
+ * Rejects single-letter tokens, phrases that begin or end on a function
+ * word, and phrases with no real content word at all.
+ */
+export function isSignaturePhrase(phrase: string): boolean {
+  const toks = phrase.split(" ");
+  if (toks.some((t) => t.length < 2)) return false;
+  if (PHRASE_STOPWORDS.has(toks[0]) || PHRASE_STOPWORDS.has(toks[toks.length - 1]))
+    return false;
+  return toks.some((t) => t.length >= 3 && !PHRASE_STOPWORDS.has(t) && /\p{L}/u.test(t));
+}
+
 function ngrams(tokens: string[], n: number): string[] {
   const out: string[] = [];
   for (let i = 0; i <= tokens.length - n; i++) {
@@ -109,7 +151,7 @@ export function analyzeTexts(samples: string[]): StyleProfile {
   // callers believe a usable style profile existed (style-analyzer.ts:575,
   // api/scan/route.ts hasProfile).
   const nonEmpty = samples.filter((s) => s.trim().length > 0);
-  const combined = nonEmpty.join("\n\n");
+  const combined = collapseSpacedLetters(nonEmpty.join("\n\n"));
   const words = wordsOf(combined);
   const sentences = sentencesOf(combined);
   const wordCount = words.length || 1;
@@ -141,12 +183,15 @@ export function analyzeTexts(samples: string[]): StyleProfile {
     8,
   );
 
-  const bigrams = ngrams(words, 2);
-  const trigrams = ngrams(words, 3);
-  const signaturePhrases = [
-    ...topFrequent(trigrams, 4, 2),
-    ...topFrequent(bigrams, 6, 3),
-  ].slice(0, 8);
+  const bigrams = ngrams(words, 2).filter(isSignaturePhrase);
+  const trigrams = ngrams(words, 3).filter(isSignaturePhrase);
+  const topTrigrams = topFrequent(trigrams, 4, 2);
+  // A bigram already contained in a chosen trigram ("and volunteers" inside
+  // "staff and volunteers") adds nothing, so skip it.
+  const topBigrams = topFrequent(bigrams, 10, 3).filter(
+    (b) => !topTrigrams.some((t) => t.includes(b)),
+  );
+  const signaturePhrases = [...topTrigrams, ...topBigrams].slice(0, 8);
 
   const preferredOpeners = topFrequent(
     sentences
@@ -203,17 +248,19 @@ export function analyzeTexts(samples: string[]): StyleProfile {
 }
 
 export function summarizeProfile(profile: StyleProfile): string {
-  const bits = [
-    `Based on ${profile.sampleCount} sample${profile.sampleCount === 1 ? "" : "s"} (${profile.sampleWordCount} words).`,
-    `Typical sentence ~${Math.round(profile.avgSentenceLength)} words.`,
-    ...profile.toneNotes.slice(0, 4).map((n) => capitalize(n) + "."),
-  ];
-  if (profile.signaturePhrases.length) {
-    bits.push(
-      `Recurring phrases: ${profile.signaturePhrases.slice(0, 4).map((p) => `"${p}"`).join(", ")}.`,
-    );
-  }
-  return bits.join(" ");
+  // Tone notes and signature phrases are rendered as their own lists in the
+  // UI, so the summary only carries what those lists do not: corpus size and
+  // sentence rhythm. Repeating the bullets here read as filler.
+  const n = profile.sampleCount;
+  const words = profile.sampleWordCount.toLocaleString("en-US");
+  const avg = Math.round(profile.avgSentenceLength);
+  const rhythm =
+    avg < 12
+      ? "short, punchy sentences"
+      : avg > 22
+        ? "long, flowing sentences"
+        : "medium-length sentences";
+  return `Based on ${n} sample${n === 1 ? "" : "s"} (${words} words). Sentences average about ${avg} words, so your writing leans toward ${rhythm}.`;
 }
 
 function round(n: number, places: number) {
