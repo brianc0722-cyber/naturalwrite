@@ -1,4 +1,4 @@
-export type MatchType = "exact" | "near" | "paraphrase";
+export type MatchType = "exact" | "near" | "paraphrase" | "none";
 
 export type SourceHit = {
   title: string;
