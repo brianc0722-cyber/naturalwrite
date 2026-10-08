@@ -139,22 +139,6 @@ export default function AiToolkit() {
           <span className="nw-badge nw-badge-here">You are here</span>
         </div>
 
-        <a className="nw-row" role="menuitem" href="/plagiarism">
-          <span className="nw-left">
-            <span className="nw-icon nw-icon-green">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M9 11l3 3L22 4" />
-                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
-              </svg>
-            </span>
-            <span>
-              <span className="nw-name">Originality</span>
-              <span className="nw-desc">Check writing for plagiarism.</span>
-            </span>
-          </span>
-          <span className="nw-badge nw-badge-here">Open →</span>
-        </a>
-
         <a className="nw-row" role="menuitem" href={SUMMA_URL} target="_blank" rel="noopener noreferrer">
           <span className="nw-left">
             <span className="nw-icon nw-icon-amber">
