@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 
 /** PromptForge's live address. Leave empty to show "Coming soon" instead. */
 const PROMPTFORGE_URL = "https://promptforge-omega-navy.vercel.app";
@@ -8,6 +9,8 @@ const PROMPTFORGE_URL = "https://promptforge-omega-navy.vercel.app";
 const SUMMA_URL = "https://www.contentsummarize.com/";
 
 export default function AiToolkit() {
+  const pathname = usePathname();
+  const [inFrame, setInFrame] = useState(false);
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -35,6 +38,18 @@ export default function AiToolkit() {
       document.removeEventListener("keydown", onKey);
     };
   }, [open]);
+
+  useEffect(() => {
+    try {
+      setInFrame(window.self !== window.top);
+    } catch {
+      setInFrame(true);
+    }
+  }, []);
+
+  if (inFrame || pathname.startsWith("/plagiarism")) {
+    return null;
+  }
 
   const promptForgeLive = PROMPTFORGE_URL.trim().length > 0;
 
