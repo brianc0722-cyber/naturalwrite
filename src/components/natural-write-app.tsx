@@ -88,7 +88,7 @@ export function NaturalWriteApp({
   );
   const [dragOver, setDragOver] = useState(false);
   const [previewId, setPreviewId] = useState<string | null>(null);
-  const [tab, setTab] = useState<"write" | "scan" | "grammar">("write");
+  const [tab, setTab] = useState<"write" | "scan" | "grammar" | "originality">("write");
   /** Text handed to the grammar tab when the user opens a rewrite there. */
   const [grammarHandoff, setGrammarHandoff] = useState<string | null>(null);
   /**
@@ -392,6 +392,17 @@ export function NaturalWriteApp({
             <path d="m9 11 2 2 4-4" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           Grammar &amp; Mechanics
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("originality")}
+          className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+            tab === "originality"
+              ? "bg-slate-900 text-white shadow-sm"
+              : "text-slate-600 hover:text-slate-900"
+          }`}
+        >
+          Originality
         </button>
       </div>
 
@@ -784,11 +795,17 @@ export function NaturalWriteApp({
       </div>
       ) : tab === "scan" ? (
         <AiScanner hasProfile={(profile?.sampleCount ?? 0) > 0} />
-      ) : (
+      ) : tab === "grammar" ? (
         <GrammarChecker
           initialText={grammarHandoff}
           initialSource={grammarHandoff ? "rewrite" : null}
           onConsumed={handoffConsumed}
+        />
+      ) : (
+        <iframe
+          title="Originality checker"
+          src="/plagiarism"
+          className="min-h-[85vh] w-full rounded-3xl border border-slate-200 bg-white shadow-sm"
         />
       )}
     </div>
